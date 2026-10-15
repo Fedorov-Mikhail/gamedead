@@ -38,7 +38,7 @@
 - Spring Boot 4.1.1; версии Spring Security, Hibernate и Flyway управляются BOM Spring Boot.
 - Spring MVC, Spring Security, Bean Validation, Spring Data JPA, PostgreSQL JDBC, Flyway с модулем PostgreSQL.
 - Версия libGDX фиксируется перед клиентским этапом; настольный backend — LWJGL3. Зависимости libGDX и платформенные native-библиотеки подключаются только к клиенту. Структура desktop-клиента сверяется с актуальным Gradle-проектом генератора gdx-liftoff и проверяется отдельным запуском.
-- JUnit 5; интеграционные проверки — на PostgreSQL в отдельной тестовой БД. H2 не подменяет PostgreSQL.
+- JUnit Jupiter 6.0.3 из BOM Spring Boot 4.1.1; интеграционные проверки — на PostgreSQL в отдельной тестовой БД. H2 не подменяет PostgreSQL. Версия уточнена при реализации: выбранный Spring Boot управляет JUnit 6, поэтому отдельный устаревший BOM JUnit 5 не используется.
 
 Gradle Wrapper загружает Gradle, Gradle загружает зависимости. Ручная установка Spring, libGDX или отдельного Gradle не требуется. Интернет нужен для первой сборки. IntelliJ IDEA уже обнаружена на компьютере. Docker не является обязательным инструментом первого этапа.
 

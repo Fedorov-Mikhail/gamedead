@@ -6,7 +6,7 @@
 
 **Architecture:** Gradle-проект с модулями `protocol` и `server`. HTTP-контроллеры используют транзакционные сервисы, Spring Data JPA хранит аккаунты, профили и сессии в схеме `game`. Flyway управляет структурой, Hibernate только проверяет её.
 
-**Tech Stack:** Java 21, Gradle 9.8.1 Wrapper и Groovy DSL, Spring Boot 4.1.1, Spring Security, Spring Data JPA, PostgreSQL, Flyway, JUnit 5.
+**Tech Stack:** Java 21, Gradle 9.8.1 Wrapper и Groovy DSL, Spring Boot 4.1.1, Spring Security, Spring Data JPA, PostgreSQL, Flyway, JUnit Jupiter 6.0.3 из BOM Spring Boot (уточнено при реализации).
 
 **Spec:** `docs/superpowers/specs/2026-10-15-foundation-design.md`
 

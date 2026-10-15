@@ -1,0 +1,14 @@
+plugins {
+    id 'org.springframework.boot' version '4.1.1' apply false
+}
+subprojects {
+    group = 'com.gamedead'
+    version = '0.1.0-SNAPSHOT'
+    apply plugin: 'java-library'
+    java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+    tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8'; options.release = 21 }
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+        testLogging { events 'failed', 'skipped'; exceptionFormat = 'full' }
+    }
+}

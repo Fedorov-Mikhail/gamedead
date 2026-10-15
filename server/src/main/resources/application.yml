@@ -1,0 +1,34 @@
+server:
+  address: ${GAMEDEAD_BIND_ADDRESS:127.0.0.1}
+  port: ${GAMEDEAD_PORT:8080}
+  forward-headers-strategy: none
+  error:
+    include-message: never
+    include-stacktrace: never
+spring:
+  application:
+    name: gamedead-server
+  datasource:
+    url: ${GAMEDEAD_DB_URL:jdbc:postgresql://localhost:5432/gamedead}
+    username: ${GAMEDEAD_DB_USERNAME:gamedead_app}
+    password: ${GAMEDEAD_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 8
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: game
+        jdbc:
+          time_zone: UTC
+  flyway:
+    default-schema: game
+    schemas: game
+    create-schemas: false
+    clean-disabled: true
+    baseline-on-migrate: false
+  sql:
+    init:
+      mode: never
