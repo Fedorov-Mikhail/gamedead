@@ -13,6 +13,16 @@ import static org.assertj.core.api.Assertions.*;
 class SessionRestartIT {
     private final HttpClient client=HttpClient.newHttpClient();
     private final JsonMapper json=JsonMapper.builder().build();
+    @Test void inheritedFlywayConnectionCannotOverrideTestDatabase() throws Exception {
+        String previous=System.getProperty("spring.flyway.url");
+        System.setProperty("spring.flyway.url","jdbc:postgresql://127.0.0.1:1/gamedead");
+        try(var context=start();var connection=context.getBean(org.flywaydb.core.Flyway.class).getConfiguration().getDataSource().getConnection()) {
+            assertThat(connection.getCatalog()).isEqualTo("gamedead_test");
+        } finally {
+            if(previous==null) System.clearProperty("spring.flyway.url");
+            else System.setProperty("spring.flyway.url",previous);
+        }
+    }
     @Test void tokenRemainsValidAfterServerRestart() throws Exception {
         String login="restart_"+UUID.randomUUID().toString().substring(0,8);
         String token;
@@ -32,10 +42,8 @@ class SessionRestartIT {
     private ConfigurableApplicationContext start() {
         String url=System.getenv("GAMEDEAD_TEST_DB_URL");
         TestDatabaseGuard.requireTestDatabase(url);
-        var properties=new HashMap<String,Object>();
-        properties.put("spring.datasource.url",url);
-        properties.put("spring.datasource.username",Objects.requireNonNull(System.getenv("GAMEDEAD_TEST_DB_USERNAME")));
-        properties.put("spring.datasource.password",Objects.requireNonNull(System.getenv("GAMEDEAD_TEST_DB_PASSWORD")));
+        var properties=new HashMap<>(TestDatabaseGuard.connectionProperties(url,
+            System.getenv("GAMEDEAD_TEST_DB_USERNAME"),System.getenv("GAMEDEAD_TEST_DB_PASSWORD")));
         properties.put("server.port",0);
         properties.put("spring.main.banner-mode","off");
         properties.put("logging.level.root","WARN");

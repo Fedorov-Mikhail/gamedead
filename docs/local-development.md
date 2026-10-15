@@ -79,7 +79,7 @@ $registration = @{
 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "$baseUrl/auth/register" -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($registration))
 $credentials = @{ login = 'mage_one'; password = $plainGamePassword } | ConvertTo-Json
-$session = Invoke-RestMethod -Method Post -Uri "$baseUrl/auth/login" -ContentType 'application/json' -Body $credentials
+$session = Invoke-RestMethod -Method Post -Uri "$baseUrl/auth/login" -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($credentials))
 $headers = @{ Authorization = "Bearer $($session.accessToken)" }
 Invoke-RestMethod -Uri "$baseUrl/me" -Headers $headers
 Invoke-RestMethod -Method Post -Uri "$baseUrl/auth/logout" -Headers $headers

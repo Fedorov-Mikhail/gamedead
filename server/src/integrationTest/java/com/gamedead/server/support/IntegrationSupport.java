@@ -19,9 +19,7 @@ public abstract class IntegrationSupport {
         String url=System.getenv("GAMEDEAD_TEST_DB_URL");
         TestDatabaseGuard.requireTestDatabase(url);
         String user=required("GAMEDEAD_TEST_DB_USERNAME"), password=required("GAMEDEAD_TEST_DB_PASSWORD");
-        registry.add("spring.datasource.url",()->url);
-        registry.add("spring.datasource.username",()->user);
-        registry.add("spring.datasource.password",()->password);
+        TestDatabaseGuard.connectionProperties(url,user,password).forEach((name,value)->registry.add(name,()->value));
     }
     private static String required(String name) {
         String value=System.getenv(name);

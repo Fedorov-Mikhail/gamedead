@@ -15,9 +15,11 @@ class AuthContractIT extends IntegrationSupport {
         assertThat(invalid.body()).contains("fieldErrors","login").doesNotContain("secret-test-123");
         assertThat(request("POST","/api/v1/auth/register","{}",null).statusCode()).isEqualTo(400);
         String login="contract_"+UUID.randomUUID().toString().substring(0,8);
-        assertThat(register(login).statusCode()).isEqualTo(201);
+        String unicodePassword=" Секретный пароль 🔥 ";
+        String registration=JSON.writeValueAsString(java.util.Map.of("login",login,"displayName","Маг","password",unicodePassword));
+        assertThat(request("POST","/api/v1/auth/register",registration,null).statusCode()).isEqualTo(201);
         assertThat(register(login.toUpperCase(java.util.Locale.ROOT)).statusCode()).isEqualTo(409);
-        var signedIn=login(login);
+        var signedIn=request("POST","/api/v1/auth/login",JSON.writeValueAsString(java.util.Map.of("login",login,"password",unicodePassword)),null);
         assertThat(signedIn.statusCode()).isEqualTo(200);
         assertThat(signedIn.headers().firstValue("Cache-Control").orElse("")).contains("no-store");
         String token=field(signedIn.body(),"accessToken");
