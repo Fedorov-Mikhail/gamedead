@@ -1,0 +1,12 @@
+.gradle/
+.gradle-user-home/
+.tools/
+.superpowers/
+**/build/
+.idea/
+*.iml
+.env
+.env.*
+!.env.example
+*.log
+*.hprof
