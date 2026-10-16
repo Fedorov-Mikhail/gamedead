@@ -1,6 +1,7 @@
 package com.gamedead.client.net;
 
 import com.gamedead.protocol.auth.*;
+import com.gamedead.protocol.room.JoinRoomRequest;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.*;
@@ -72,6 +73,17 @@ class HttpGameApiTest {
         route("/api/v1/auth/logout", 204, "");
         assertThat(api.logout("session-value").join()).isNull();
         assertThat(authorization.get()).isEqualTo("Bearer session-value");
+    }
+    @Test void roomJoinUsesAuthenticatedJsonAndReadsVersionedState(){
+        route("/api/v1/rooms/join",200,"{\"revision\":12,\"room\":{\"code\":\"ABC234\",\"version\":12,\"ownerId\":\""+ACCOUNT+"\",\"status\":\"LOBBY\",\"members\":[{\"accountId\":\""+ACCOUNT+"\",\"displayName\":\"Маг\",\"ready\":false,\"connected\":true,\"color\":0}]}}");
+        var state=api.room("session-value","join",new JoinRoomRequest("ABC234")).join();
+        assertThat(state.room().members().getFirst().displayName()).isEqualTo("Маг");
+        assertThat(authorization.get()).isEqualTo("Bearer session-value");
+        assertThat(json.readTree(body.get()).get("code").asString()).isEqualTo("ABC234");
+    }
+    @Test void fullRoomIsNotReportedAsTakenLogin(){
+        route("/api/v1/rooms/join",409,"{\"code\":\"ROOM_FULL\",\"message\":\"internal details\",\"fieldErrors\":{}}");
+        assertThat(failure(api.room("token","join",new JoinRoomRequest("ABC234"))).getMessage()).contains("четыре игрока").doesNotContain("логин","internal");
     }
 
     @ParameterizedTest @ValueSource(ints = {400, 401, 409, 415, 429, 500})

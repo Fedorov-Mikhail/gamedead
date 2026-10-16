@@ -9,6 +9,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import com.gamedead.client.net.RoomChannel;
+import com.gamedead.protocol.room.*;
 
 public final class AuthController implements AutoCloseable {
     private AuthState state = new AuthState(AuthState.View.LOGIN, false, "", "", false, Map.of(), null);
@@ -26,6 +28,14 @@ public final class AuthController implements AutoCloseable {
         this.listener = listener;
     }
     public AuthState state() { return state; }
+    public CompletableFuture<RoomStateResponse> room(String action,Object body) {
+        if(closed || token==null || state.view()!=AuthState.View.PROFILE)return CompletableFuture.failedFuture(new ApiFailure(401,"Сначала войди в аккаунт."));
+        return api.room(token,action,body);
+    }
+    public CompletableFuture<RoomChannel> connectRooms(Consumer<RoomEvent> events,Consumer<ApiFailure> failure) {
+        if(closed || token==null || state.view()!=AuthState.View.PROFILE)return CompletableFuture.failedFuture(new ApiFailure(401,"Сначала войди в аккаунт."));
+        return api.connectRooms(token,events,failure);
+    }
     public void showRegister() { navigate(AuthState.View.REGISTER); }
     public void showLogin() { navigate(AuthState.View.LOGIN); }
 

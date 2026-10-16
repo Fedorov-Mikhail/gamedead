@@ -25,6 +25,7 @@ final class UiTheme implements Disposable {
             font(generator, "small", 16);
             font(generator, "heading", 32);
             font(generator, "title", 52);
+            font(generator, "world-font", 9);
         } finally { generator.dispose(); }
         skin.add("default", new Label.LabelStyle(skin.getFont("default-font"), TEXT));
         skin.add("small", new Label.LabelStyle(skin.getFont("small"), MUTED));

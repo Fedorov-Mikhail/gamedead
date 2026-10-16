@@ -2,6 +2,7 @@ plugins { id 'application' }
 
 dependencies {
     implementation project(':protocol')
+    implementation project(':game-core')
     implementation 'com.badlogicgames.gdx:gdx:1.14.2'
     implementation 'com.badlogicgames.gdx:gdx-backend-lwjgl3:1.14.2'
     implementation 'com.badlogicgames.gdx:gdx-freetype:1.14.2'

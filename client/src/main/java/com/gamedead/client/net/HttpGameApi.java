@@ -3,6 +3,8 @@ package com.gamedead.client.net;
 import com.gamedead.protocol.account.PlayerProfileResponse;
 import com.gamedead.protocol.auth.*;
 import com.gamedead.protocol.error.ApiError;
+import com.gamedead.protocol.room.*;
+import java.util.function.Consumer;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 import java.net.URI;
@@ -18,6 +20,7 @@ public final class HttpGameApi implements GameApi {
     private final ExecutorService executor;
     private final HttpClient client;
     private final Set<CompletableFuture<?>> pending = ConcurrentHashMap.newKeySet();
+    private final Set<SocketRoomChannel> channels=ConcurrentHashMap.newKeySet();
     private final JsonMapper json = JsonMapper.builder()
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
     private volatile boolean closed;
@@ -53,6 +56,22 @@ public final class HttpGameApi implements GameApi {
     }
     @Override public CompletableFuture<Void> logout(String token) {
         return send("/api/v1/auth/logout", "", token, 204, Void.class);
+    }
+    @Override public CompletableFuture<RoomStateResponse> room(String token,String action,Object body) {
+        if(!Set.of("me","create","join","ready","start","stop","leave").contains(action))throw new IllegalArgumentException("Unknown room operation");
+        return send("/api/v1/rooms/"+action,action.equals("me")?null:body==null?"":body,token,action.equals("create")?201:200,RoomStateResponse.class);
+    }
+    @Override public CompletableFuture<RoomChannel> connectRooms(String token,Consumer<RoomEvent> events,Consumer<ApiFailure> failure) {
+        if(closed)return CompletableFuture.failedFuture(new ApiFailure(0,"Клиент закрыт."));
+        URI uri=URI.create((base.getScheme().equals("https")?"wss":"ws")+"://"+base.getRawAuthority()+"/ws/game");
+        SocketRoomChannel channel=new SocketRoomChannel(json,events,failure);
+        channel.onClosed(()->channels.remove(channel));
+        channels.add(channel);
+        var wire=client.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(5)).header("Authorization","Bearer "+token).buildAsync(uri,channel);
+        wire.whenComplete((socket,error)->{if(error!=null)channel.failed(error);});
+        var result=channel.ready().orTimeout(10,TimeUnit.SECONDS);
+        result.whenComplete((socket,error)->{if(error!=null){wire.cancel(true);channel.close();channels.remove(channel);}if(closed)channel.close();});
+        return result;
     }
 
     private <T> CompletableFuture<T> send(String path, Object body, String token, int expected, Class<T> type) {
@@ -93,6 +112,7 @@ public final class HttpGameApi implements GameApi {
                     && "Bearer".equals(r.tokenType()) && r.expiresAt() != null;
             case RegisterResponse r -> r.accountId() != null && r.login() != null && r.displayName() != null;
             case PlayerProfileResponse r -> r.accountId() != null && r.login() != null && r.displayName() != null && r.accountXp() >= 0;
+            case RoomStateResponse r -> RoomMessages.valid(r);
             case null, default -> false;
         };
         if (!valid) throw new IllegalArgumentException("Incomplete response");
@@ -109,6 +129,21 @@ public final class HttpGameApi implements GameApi {
                     : "Неожиданный ответ сервера. Проверь его адрес и версию.";
         };
         Map<String, String> fields = new LinkedHashMap<>();
+        try {
+            var error=json.readValue(response.body(),ApiError.class);
+            message=switch(error.code()) {
+                case "ROOM_FULL" -> "В комнате уже четыре игрока.";
+                case "ROOM_NOT_FOUND" -> "Комната не найдена. Проверь код.";
+                case "ALREADY_IN_ROOM" -> "Ты уже состоишь в комнате.";
+                case "ROOM_PLAYING" -> "В комнате уже началась тренировка.";
+                case "ROOM_NOT_READY" -> "Нужны хотя бы два подключённых игрока. Все должны нажать «Готов».";
+                case "NOT_OWNER" -> "Это действие доступно владельцу комнаты.";
+                case "NOT_CONNECTED" -> "Игровое соединение ещё не установлено. Нажми «Подключиться».";
+                case "INVALID_ROOM_CODE" -> "Введи код комнаты: 6 букв или цифр.";
+                case "SERVER_BUSY" -> "Сервер занят. Попробуй позже.";
+                default -> message;
+            };
+        } catch(RuntimeException ignored) { }
         if (status == 400) {
             try {
                 var error = json.readValue(response.body(), ApiError.class);
@@ -143,6 +178,7 @@ public final class HttpGameApi implements GameApi {
     @Override public void close() {
         closed = true;
         pending.forEach(request -> request.cancel(true));
+        channels.forEach(SocketRoomChannel::close);channels.clear();
         client.shutdownNow();
         executor.shutdownNow();
     }

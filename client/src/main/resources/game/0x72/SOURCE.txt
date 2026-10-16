@@ -1,0 +1,9 @@
+DungeonTileset II v1.7
+Author: 0x72 (Robert)
+Source: https://0x72.itch.io/dungeontileset-ii
+Asset license stated by the author: Creative Commons Zero v1.0 Universal (CC0).
+License reference: https://creativecommons.org/publicdomain/zero/1.0/
+
+dungeon.png and tile-list.txt are unchanged copies of the original atlas and mapping.
+README-original.txt contains the author's original technical notes.
+Additional macOS metadata and separately exported frames are not included in the game distribution.

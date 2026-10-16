@@ -10,9 +10,15 @@ import com.badlogic.gdx.utils.Clipboard;
 import com.gamedead.client.net.GameApi;
 import com.gamedead.protocol.account.PlayerProfileResponse;
 import com.gamedead.protocol.auth.*;
+import com.gamedead.protocol.room.*;
+import com.gamedead.protocol.world.*;
+import com.gamedead.client.net.*;
+import com.gamedead.game.ArenaWorld;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 /** Explicit graphics check, deliberately excluded from normal build/test tasks. */
 public final class DesktopCheck {
@@ -34,7 +40,14 @@ public final class DesktopCheck {
                 @Override public void resize(int w, int h) { game.resize(w, h); }
                 @Override public void render() {
                     try {
-                        game.render();
+                        Input actualInput=Gdx.input;
+                        int current=frame;
+                        if(current>=68 && current<=80)Gdx.input=(Input)java.lang.reflect.Proxy.newProxyInstance(Input.class.getClassLoader(),new Class<?>[]{Input.class},(proxy,method,arguments)->{
+                            if(method.getName().equals("isKeyPressed") && (int)arguments[0]==Input.Keys.D)return true;
+                            if(method.getName().equals("isKeyJustPressed") && (int)arguments[0]==Input.Keys.SHIFT_LEFT)return current==68;
+                            return method.invoke(actualInput,arguments);
+                        });
+                        try{game.render();}finally{Gdx.input=actualInput;}
                         frame++;
                         Stage stage = (Stage) Gdx.input.getInputProcessor();
                         switch (frame) {
@@ -71,9 +84,21 @@ public final class DesktopCheck {
                             case 37 -> {
                                 Label xp = stage.getRoot().findActor("profile-xp");
                                 if (!xp.getText().toString().contains("84")) throw new AssertionError("Refresh did not update profile");
-                                click(stage, "logout");
+                                click(stage, "rooms");
                             }
-                            case 44 -> {
+                            case 44 -> {snapshot(size[0]+"-room-menu");click(stage,"room-create");}
+                            case 50 -> {snapshot(size[0]+"-lobby");click(stage,"room-ready");}
+                            case 60 -> click(stage,"room-start");
+                            case 88 -> {
+                                if(stage.getRoot().findActor("arena-stop")==null)throw new AssertionError("Arena HUD missing");
+                                if(api.world.players().getFirst().x()<=80)throw new AssertionError("WASD did not move the player");
+                                if(api.world.players().getFirst().dashCooldown()<=0)throw new AssertionError("Shift did not trigger dash");
+                                snapshot(size[0]+"-arena");click(stage,"arena-stop");
+                            }
+                            case 96 -> click(stage,"room-leave");
+                            case 102 -> click(stage,"room-back");
+                            case 108 -> click(stage,"logout");
+                            case 116 -> {
                                 if (stage.getRoot().findActor("profile-name") != null) throw new AssertionError("Logout retained profile");
                                 snapshot(size[0] + "-logout");
                                 Gdx.app.exit();
@@ -86,7 +111,7 @@ public final class DesktopCheck {
             }, config);
             if (failure != null) throw new AssertionError("Desktop check failed", failure);
         }
-        System.out.println("Desktop forms checked at 1280x720 and 960x640. Screenshots: client/build/reports/desktop/");
+        System.out.println("Desktop accounts, rooms, arena, WASD and Shift checked at 1280x720 and 960x640. Screenshots: client/build/reports/desktop/");
     }
 
     private static TextField field(Stage stage, String name) {
@@ -128,6 +153,20 @@ public final class DesktopCheck {
         final UUID id = UUID.fromString("c28e03ef-f924-4dbd-afc7-9f93e7b70db6");
         String password;
         int reads;
+        Consumer<RoomEvent> events;
+        long revision;
+        boolean ready,playing;
+        RoomSnapshot room;
+        UUID worldId;
+        ArenaWorld world;
+        final List<UUID> roster=List.of(id,UUID.fromString("00000000-0000-0000-0000-000000000002"),UUID.fromString("00000000-0000-0000-0000-000000000003"),UUID.fromString("00000000-0000-0000-0000-000000000004"));
+        final RoomChannel channel=new RoomChannel(){
+            public boolean input(InputCommand input){
+                if(world==null)return false;
+                world.input(id,input.sequence(),input.x(),input.y(),input.dash());world.tick();publishWorld();return true;
+            }
+            public void close(){ }
+        };
         public CompletableFuture<RegisterResponse> register(RegisterRequest request) {
             return CompletableFuture.completedFuture(new RegisterResponse(id, request.login(), request.displayName()));
         }
@@ -139,6 +178,20 @@ public final class DesktopCheck {
             return CompletableFuture.completedFuture(new PlayerProfileResponse(id, "mage", "Ёж [gold]маг", ++reads * 42L, "default"));
         }
         public CompletableFuture<Void> logout(String token) { return CompletableFuture.completedFuture(null); }
+        public CompletableFuture<RoomChannel> connectRooms(String token,Consumer<RoomEvent> events,Consumer<ApiFailure> failure){this.events=events;events.accept(RoomEvent.room(new RoomStateResponse(revision,room)));return CompletableFuture.completedFuture(channel);}
+        public CompletableFuture<RoomStateResponse> room(String token,String action,Object body){
+            revision++;
+            if(action.equals("ready"))ready=((ReadyRequest)body).ready();
+            if(action.equals("start")){playing=true;world=new ArenaWorld(roster);worldId=UUID.randomUUID();}
+            if(action.equals("stop")){playing=false;ready=false;world=null;}
+            room=action.equals("leave")?null:new RoomSnapshot("ABC234",revision,id,playing?"PLAYING":"LOBBY",List.of(
+                    new RoomMember(id,"Ёж [gold]маг",ready,true,0),new RoomMember(roster.get(1),"Маг сумрака",ready,true,1),
+                    new RoomMember(roster.get(2),"Лесной страж",ready,true,2),new RoomMember(roster.get(3),"Хранитель огня",ready,true,3)));
+            events.accept(RoomEvent.room(new RoomStateResponse(revision,room)));
+            if(playing)publishWorld();
+            return CompletableFuture.completedFuture(new RoomStateResponse(revision,room));
+        }
+        private void publishWorld(){events.accept(RoomEvent.world(new WorldSnapshot("ABC234",revision,worldId,world.tickNumber(),world.players().stream().map(p->new PlayerSnapshot(p.id(),p.x(),p.y(),p.dashCooldown(),p.moving())).toList())));}
         public void close() { }
     }
 }

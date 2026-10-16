@@ -1,0 +1,6 @@
+package com.gamedead.protocol.room;
+import com.gamedead.protocol.world.WorldSnapshot;
+public record RoomEvent(int protocolVersion, String type, RoomStateResponse state, WorldSnapshot world, String message) {
+    public static RoomEvent room(RoomStateResponse state) { return new RoomEvent(1, "ROOM", state, null, ""); }
+    public static RoomEvent world(WorldSnapshot world) { return new RoomEvent(1, "WORLD", null, world, ""); }
+}

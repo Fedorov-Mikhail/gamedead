@@ -10,6 +10,7 @@ import com.badlogic.gdx.utils.*;
 import com.badlogic.gdx.utils.viewport.ExtendViewport;
 import com.gamedead.client.auth.*;
 import com.gamedead.client.net.GameApi;
+import com.gamedead.client.room.*;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,6 +21,11 @@ public final class GameDeadClient extends ApplicationAdapter {
     private UiTheme theme;
     private ShapeRenderer shapes;
     private AuthController auth;
+    private RoomController rooms;
+    private RoomScreen roomScreen;
+    private ArenaRenderer arena;
+    private float inputTimer;
+    private boolean dashRequested;
     private AuthState.View currentView;
     private final List<TextField> fields = new ArrayList<>();
     private final List<TextButton> buttons = new ArrayList<>();
@@ -39,10 +45,15 @@ public final class GameDeadClient extends ApplicationAdapter {
         stage = new Stage(new ExtendViewport(1080, 720));
         Gdx.input.setInputProcessor(stage);
         auth = new AuthController(api, action -> Gdx.app.postRunnable(action), this::show);
+        rooms = new RoomController(auth,action->Gdx.app.postRunnable(action),this::showRoom);
+        roomScreen = new RoomScreen(stage,theme,rooms);
+        arena = new ArenaRenderer(theme.skin.getFont("world-font"));
         show(auth.state());
     }
 
     private void show(AuthState state) {
+        if(state.view()!=AuthState.View.PROFILE && rooms!=null)rooms.reset();
+        if(rooms!=null && rooms.state().visible() && state.view()==AuthState.View.PROFILE)return;
         boolean rebuild = currentView != state.view() || (state.view() == AuthState.View.PROFILE && !state.busy());
         if (rebuild) build(state);
         else if (wasBusy && !state.busy()) clearPasswords();
@@ -53,6 +64,14 @@ public final class GameDeadClient extends ApplicationAdapter {
         status.setText(message);
         status.setColor(state.error() ? UiTheme.ERROR : state.busy() ? UiTheme.GOLD : UiTheme.MUTED);
         wasBusy = state.busy();
+    }
+    private void showRoom(RoomState state){
+        if(state.visible() && auth.state().profile()!=null){
+            roomScreen.show(state,auth.state().profile().accountId());
+            if(state.world()!=null)arena.accept(state.world());
+        }else{
+            roomScreen.invalidate();currentView=null;show(auth.state());
+        }
     }
 
     private void build(AuthState state) {
@@ -142,6 +161,7 @@ public final class GameDeadClient extends ApplicationAdapter {
         note.setWrap(true);
         form.add(note).padBottom(20).row();
         addStatus(form);
+        form.add(button("Играть с друзьями", "rooms", rooms::open)).height(46).padTop(10).row();
         form.add(button("Обновить профиль", "refresh", auth::refreshProfile)).height(46).padTop(10).row();
         form.add(button("Выйти из аккаунта", "logout", auth::logout)).height(46).padTop(10).row();
         form.add(button("Закрыть игру", "close", () -> Gdx.app.exit())).height(44).padTop(10).row();
@@ -197,7 +217,19 @@ public final class GameDeadClient extends ApplicationAdapter {
         time += Math.min(Gdx.graphics.getDeltaTime(), 0.1f);
         ScreenUtils.clear(0.035f, 0.05f, 0.09f, 1);
         stage.getViewport().apply();
-        drawRunes();
+        if(RoomScreen.arena(rooms.state())){
+            float delta=Math.min(Gdx.graphics.getDeltaTime(),0.1f);
+            arena.draw(delta,rooms.state().room());
+            inputTimer+=delta;
+            dashRequested|=Gdx.input.isKeyJustPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.SHIFT_RIGHT);
+            if(inputTimer>=0.05f){
+                inputTimer%=0.05f;
+                double x=(Gdx.input.isKeyPressed(Input.Keys.D)?1:0)-(Gdx.input.isKeyPressed(Input.Keys.A)?1:0);
+                double y=(Gdx.input.isKeyPressed(Input.Keys.W)?1:0)-(Gdx.input.isKeyPressed(Input.Keys.S)?1:0);
+                if(rooms.input(x,y,dashRequested))dashRequested=false;
+            }
+            stage.getViewport().apply();
+        }else{dashRequested=false;inputTimer=0;drawRunes();}
         stage.act(Math.min(Gdx.graphics.getDeltaTime(), 0.1f));
         stage.draw();
     }
@@ -226,14 +258,17 @@ public final class GameDeadClient extends ApplicationAdapter {
 
     @Override public void resize(int width, int height) {
         if (stage != null) stage.getViewport().update(width, height, true);
+        if (arena != null) arena.resize(width,height);
     }
 
     @Override public void dispose() {
+        if(rooms!=null)rooms.close();
         if (auth != null) auth.close(); else api.close();
         clearPasswords();
         Gdx.input.setInputProcessor(null);
         if (stage != null) stage.dispose();
         if (shapes != null) shapes.dispose();
         if (theme != null) theme.dispose();
+        if (arena != null) arena.dispose();
     }
 }

@@ -48,4 +48,10 @@ public class SessionService {
         session.revoke(clock.instant());
         sessions.save(session);
     }
+    @Transactional(readOnly=true)
+    public void validatePrincipal(AccountPrincipal principal) {
+        sessions.findById(principal.sessionId()).filter(value->value.accountId().equals(principal.accountId()) && value.isActiveAt(clock.instant()))
+            .orElseThrow(AuthenticationFailedException::new);
+        accounts.findById(principal.accountId()).filter(Account::enabled).orElseThrow(AuthenticationFailedException::new);
+    }
 }

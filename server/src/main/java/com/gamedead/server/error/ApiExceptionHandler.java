@@ -9,6 +9,10 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.util.Map;
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(com.gamedead.server.room.RoomProblem.class)
+    ResponseEntity<ApiError> room(com.gamedead.server.room.RoomProblem exception){
+        return error(exception.status(),exception.code(),exception.getMessage(),Map.of());
+    }
     @ExceptionHandler(InvalidInputException.class)
     ResponseEntity<ApiError> invalid(InvalidInputException exception){
         return error(400,"INVALID_INPUT",exception.getMessage(),exception.fields());

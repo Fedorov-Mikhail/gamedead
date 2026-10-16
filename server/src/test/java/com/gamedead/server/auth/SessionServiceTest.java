@@ -10,6 +10,23 @@ import java.security.SecureRandom;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 class SessionServiceTest {
+    @Test void socketPrincipalValidationRejectsRevokedExpiredDisabledAndCrossAccountSessions(){
+        var accounts=mock(AccountRepository.class);var sessions=mock(AuthSessionRepository.class);
+        var now=Instant.parse("2026-10-16T00:00:00Z");
+        var account=new Account(UUID.randomUUID(),"mage","unused",now.minusSeconds(100));
+        var session=new AuthSession(UUID.randomUUID(),account.id(),"unused",now.minusSeconds(60),now.plusSeconds(60));
+        when(accounts.findById(account.id())).thenReturn(Optional.of(account));when(sessions.findById(session.id())).thenReturn(Optional.of(session));
+        var service=new SessionService(accounts,sessions,new AccountInputPolicy(),new BCryptPasswordEncoder(4),new TokenCodec(new SecureRandom()),Clock.fixed(now,ZoneOffset.UTC));
+        var principal=new AccountPrincipal(account.id(),session.id());
+        service.validatePrincipal(principal);
+        assertThatThrownBy(()->service.validatePrincipal(new AccountPrincipal(UUID.randomUUID(),session.id()))).isInstanceOf(AuthenticationFailedException.class);
+        var expired=new AuthSession(UUID.randomUUID(),account.id(),"unused",now.minusSeconds(100),now.minusSeconds(1));
+        when(sessions.findById(expired.id())).thenReturn(Optional.of(expired));
+        assertThatThrownBy(()->service.validatePrincipal(new AccountPrincipal(account.id(),expired.id()))).isInstanceOf(AuthenticationFailedException.class);
+        account.disable();assertThatThrownBy(()->service.validatePrincipal(principal)).isInstanceOf(AuthenticationFailedException.class);
+        when(accounts.findById(account.id())).thenReturn(Optional.of(new Account(account.id(),"mage","unused",now)));
+        session.revoke(now);assertThatThrownBy(()->service.validatePrincipal(principal)).isInstanceOf(AuthenticationFailedException.class);
+    }
     @Test void loginStoresOnlyHashAndLogoutRevokesToken() {
         var accounts=mock(AccountRepository.class);
         var sessions=mock(AuthSessionRepository.class);

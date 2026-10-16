@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { mavenCentral() }
 }
 rootProject.name = 'gamedead'
-include 'protocol', 'server', 'client'
+include 'protocol', 'server', 'client', 'game-core'

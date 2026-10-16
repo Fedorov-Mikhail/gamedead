@@ -10,7 +10,8 @@ public class AuthRequestSizeFilter extends OncePerRequestFilter {
     private final ApiErrorWriter errors;
     public AuthRequestSizeFilter(ApiErrorWriter errors) {this.errors=errors;}
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain) throws ServletException,IOException {
-        if(AuthEndpoints.operation(request)==null){chain.doFilter(request,response);return;}
+        boolean roomPost="POST".equals(request.getMethod()) && request.getServletPath().startsWith("/api/v1/rooms/");
+        if(AuthEndpoints.operation(request)==null && !roomPost){chain.doFilter(request,response);return;}
         if(request.getContentLengthLong()>MAX_BYTES){reject(response);return;}
         byte[] body=request.getInputStream().readNBytes(MAX_BYTES+1);
         if(body.length>MAX_BYTES){reject(response);return;}
