@@ -16,13 +16,19 @@ final class RoomScreen {
     private UUID account;
     private String layoutKey="",draft="";
     private TextField codeField;
+    private Label combatStatus;
     RoomScreen(Stage stage,UiTheme theme,RoomController controller){this.stage=stage;this.theme=theme;this.controller=controller;}
     void show(RoomState state,UUID account){
         this.account=account;
-        String key=state.connected()+"/"+state.busy()+"/"+(state.room()==null?"none":state.room().version())+"/"+state.message()+"/"+arena(state);
+        if(combatStatus!=null && state.world()!=null){
+            int seconds=(state.world().remainingTicks()+19)/20;
+            int health=state.world().players().stream().filter(p->p.accountId().equals(account)).findFirst().map(p->p.health()).orElse(0);
+            combatStatus.setText("Время: "+String.format("%02d:%02d",seconds/60,seconds%60)+"    Здоровье: "+health+" / 100    Убито: "+state.world().kills());
+        }
+        String key=state.connected()+"/"+state.busy()+"/"+(state.room()==null?"none":state.room().version())+"/"+state.message()+"/"+arena(state)+"/"+(state.world()==null?"":state.world().phase());
         if(key.equals(layoutKey))return;layoutKey=key;
         if(codeField!=null){draft=codeField.getText();codeField=null;}
-        stage.clear();
+        stage.clear();combatStatus=null;
         Table root=new Table();root.setFillParent(true);root.pad(24);stage.addActor(root);
         if(arena(state)){hud(root,state);return;}
         Table card=new Table();card.background(theme.skin.getDrawable("panel"));card.pad(26);card.defaults().growX().padBottom(10);
@@ -53,12 +59,13 @@ final class RoomScreen {
                 boolean ready=self!=null && self.ready();
                 card.add(button(ready?"Не готов":"Готов","room-ready",()->controller.action("ready",new ReadyRequest(!ready)),state)).height(46).row();
                 if(room.ownerId().equals(account)){
-                    TextButton start=button("Начать тренировку","room-start",()->controller.action("start",null),state);
+                    TextButton start=button("Начать забег","room-start",()->controller.action("start",null),state);
                     start.setDisabled(start.isDisabled() || room.members().size()<2 || room.members().stream().anyMatch(m->!m.ready() || !m.connected()));
                     card.add(start).height(46).row();
                 }
                 card.add(label("Для старта нужны минимум два подключённых игрока.\nКаждый участник нажимает «Готов».","small")).row();
-            }else card.add(label("Тренировка идёт. Ожидаем состояние арены…","small")).row();
+                card.add(label("После старта будет 10 секунд до первого натиска.","small")).row();
+            }else card.add(label("Забег идёт. Ожидаем состояние арены…","small")).row();
             card.add(button("Выйти из комнаты","room-leave",()->controller.action("leave",null),state)).height(44).row();
         }
         if(!state.connected())card.add(buttonAlways("Подключиться","room-connect",controller::connect,state.busy())).height(44).row();
@@ -72,12 +79,25 @@ final class RoomScreen {
     static boolean arena(RoomState state){return state.visible() && state.connected() && state.room()!=null && state.room().status().equals("PLAYING") && state.world()!=null;}
     void invalidate(){layoutKey="";}
     private void hud(Table root,RoomState state){
-        root.top();Table bar=new Table();bar.background(theme.skin.getDrawable("panel"));bar.pad(10);
-        bar.add(label("ТРЕНИРОВОЧНАЯ АРЕНА\nКомната "+state.room().code(),"small")).expandX().left();
-        if(state.room().ownerId().equals(account))bar.add(button("Вернуться в комнату","arena-stop",()->controller.action("stop",null),state)).width(245).height(44).padLeft(10);
+        boolean running=state.world().phase().equals("RUNNING");
+        root.top().pad(16);Table bar=new Table();bar.background(theme.skin.getDrawable("panel"));bar.pad(10);
+        combatStatus=label("","small");combatStatus.setName("combat-status");
+        int seconds=(state.world().remainingTicks()+19)/20;
+        int health=state.world().players().stream().filter(p->p.accountId().equals(account)).findFirst().map(p->p.health()).orElse(0);
+        combatStatus.setText("Время: "+String.format("%02d:%02d",seconds/60,seconds%60)+"    Здоровье: "+health+" / 100    Убито: "+state.world().kills());
+        bar.add(combatStatus).expandX().left();
+        if(state.room().ownerId().equals(account))bar.add(button(running?"Прервать бой":"Вернуться в комнату","arena-stop",()->controller.action("stop",null),state)).width(245).height(44).padLeft(10);
         bar.add(button("Выйти","arena-leave",()->controller.action("leave",null),state)).width(120).height(44).padLeft(10);
-        root.add(bar).growX().row();root.add().expandY().row();
-        root.add(label("WASD — движение     Shift — рывок","default")).left();stage.setKeyboardFocus(null);
+        root.add(bar).growX().row();
+        if(!running){
+            Table result=new Table();result.background(theme.skin.getDrawable("panel"));result.pad(28);
+            String title=switch(state.world().phase()){case "WON"->"Отряд выстоял!";case "LOST"->"Отряд пал";default->"Бой прерван";};
+            Label heading=label(title,"heading");heading.setName("combat-result");result.add(heading).padBottom(14).row();
+            result.add(label("Уничтожено врагов: "+state.world().kills(),"default")).row();
+            result.add(label("Владелец может вернуть отряд в комнату для нового забега.","small")).padTop(12).row();
+            root.add(result).expandY().center().row();
+        }else root.add().expandY().row();
+        root.add(label(state.error()?state.message():"WASD — движение   Мышь + ЛКМ — атака   Shift — рывок   E — спасти союзника","small")).left();stage.setKeyboardFocus(null);
     }
     private Label label(String text,String style){return new Label(text,theme.skin,style);}
     private TextButton button(String text,String name,Runnable action,RoomState state){return buttonAlways(text,name,action,!state.connected() || state.busy());}

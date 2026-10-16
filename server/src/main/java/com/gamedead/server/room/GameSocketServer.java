@@ -80,9 +80,11 @@ public final class GameSocketServer implements ApplicationListener<ServletWebSer
             if(second!=window){window=second;messages=0;}
             if(++messages>60){close(1008,"Слишком много команд");return;}
             try{
-                InputCommand input=json.readValue(text,InputCommand.class);
-                if(input==null || input.sequence()<0 || !Double.isFinite(input.x()) || !Double.isFinite(input.y())
-                        || Math.abs(input.x())>1 || Math.abs(input.y())>1)throw new IllegalArgumentException();
+                var tree=json.readTree(text);
+                var version=tree==null?null:tree.get("protocolVersion");
+                if(version==null || !version.isInt() || version.asInt()!=InputCommand.VERSION){close(1002,"Обнови клиент: версия протокола изменилась");return;}
+                InputCommand input=json.treeToValue(tree,InputCommand.class);
+                if(input==null || !input.valid())throw new IllegalArgumentException();
                 rooms.input(principal.accountId(),connection,input);
             }catch(RuntimeException e){close(1008,"Некорректная команда движения");}
         }

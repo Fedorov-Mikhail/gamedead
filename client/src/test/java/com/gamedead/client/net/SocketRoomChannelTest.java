@@ -31,11 +31,18 @@ class SocketRoomChannelTest {
         assertThat(socket.aborted).isTrue();assertThat(failures).hasSize(1);assertThat(events).isEmpty();
     }
     @Test void incompatibleProtocolIsRejected(){
-        channel.onText(socket,"{\"protocolVersion\":2,\"type\":\"ROOM\",\"state\":{\"revision\":1,\"room\":null}}",true);
+        channel.onText(socket,"{\"protocolVersion\":99,\"type\":\"ROOM\",\"state\":{\"revision\":1,\"room\":null}}",true);
         assertThat(socket.aborted).isTrue();assertThat(events).isEmpty();
     }
+    @Test void combatProtocolOpensControlsAndOldProtocolDoesNot(){
+        channel.onText(socket,"{\"protocolVersion\":2,\"type\":\"ROOM\",\"state\":{\"revision\":1,\"room\":null}}",true);
+        assertThat(channel.ready()).isCompletedWithValue(channel);
+        channel.onText(socket,"{\"protocolVersion\":1,\"type\":\"ROOM\",\"state\":{\"revision\":2,\"room\":null}}",true);
+        assertThat(socket.aborted).isTrue();
+        assertThat(events).hasSize(1);
+    }
     @Test void missingRoomMemberIdentityNeverReachesUi(){
-        channel.onText(socket,"{\"protocolVersion\":1,\"type\":\"ROOM\",\"state\":{\"revision\":1,\"room\":{\"code\":\"ABC234\",\"version\":1,\"ownerId\":\"00000000-0000-0000-0000-000000000001\",\"status\":\"LOBBY\",\"members\":[{\"accountId\":null,\"displayName\":\"Маг\",\"ready\":false,\"connected\":true,\"color\":0}]}}}",true);
+        channel.onText(socket,"{\"protocolVersion\":2,\"type\":\"ROOM\",\"state\":{\"revision\":1,\"room\":{\"code\":\"ABC234\",\"version\":1,\"ownerId\":\"00000000-0000-0000-0000-000000000001\",\"status\":\"LOBBY\",\"members\":[{\"accountId\":null,\"displayName\":\"Маг\",\"ready\":false,\"connected\":true,\"color\":0}]}}}",true);
         assertThat(socket.aborted).isTrue();assertThat(events).isEmpty();
     }
     @Test void inputBackpressureAllowsRetryOfDashWithoutBuildingQueue(){

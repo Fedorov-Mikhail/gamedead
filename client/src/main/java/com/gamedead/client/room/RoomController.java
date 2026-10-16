@@ -52,7 +52,9 @@ public final class RoomController implements AutoCloseable {
             WorldSnapshot next=event.world();RoomSnapshot room=state.room();
             if(room==null || !room.status().equals("PLAYING") || !room.code().equals(next.roomCode()) || next.roomVersion()<room.version())return;
             WorldSnapshot current=state.world();
-            if(current!=null && current.worldId().equals(next.worldId()) && next.tick()<=current.tick())return;
+            if(current!=null && current.worldId().equals(next.worldId())
+                    && (next.tick()<current.tick() || (next.tick()==current.tick()
+                    && (next.phase().equals(current.phase()) || !current.phase().equals("RUNNING")))))return;
             publish(true,state.connected(),state.busy(),room,next,state.message(),state.error());
         }
     }
@@ -69,9 +71,10 @@ public final class RoomController implements AutoCloseable {
         if(pending!=null){pending.cancel(true);pending=null;}
         publish(true,false,false,state.room(),null,failure.getMessage(),true);
     }
-    public boolean input(double x,double y,boolean dash){
+    public boolean input(double x,double y,boolean dash,double aimX,double aimY,boolean attack,boolean revive){
         return !closed && channel!=null && state.connected() && !state.busy() && state.world()!=null
-                && channel.input(new InputCommand(++sequence,x,y,dash));
+                && state.world().phase().equals("RUNNING")
+                && channel.input(new InputCommand(InputCommand.VERSION,++sequence,x,y,dash,aimX,aimY,attack,revive));
     }
     public void back(){if(state.room()==null || !state.connected()){reset();listener.accept(state);}}
     public void reset(){

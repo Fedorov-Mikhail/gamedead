@@ -44,7 +44,7 @@ class RoomControllerTest {
         controller.open();api.connected.complete(api.channel);
         Consumer<RoomEvent> old=api.events;
         old.accept(RoomEvent.room(new RoomStateResponse(5,snapshot(5,"PLAYING"))));
-        old.accept(RoomEvent.world(new WorldSnapshot("ABC234",5,UUID.randomUUID(),10,List.of(new PlayerSnapshot(id,80,192,0,false)))));
+        old.accept(RoomEvent.world(new WorldSnapshot("ABC234",5,UUID.randomUUID(),10,List.of(new PlayerSnapshot(id,80,192,0,false,100,0)),List.of(),List.of(),"RUNNING",4790,0)));
         assertThat(controller.state().world()).isNotNull();
         api.failure.accept(new ApiFailure(0,"Связь потеряна"));
         assertThat(controller.state().connected()).isFalse();
@@ -59,6 +59,17 @@ class RoomControllerTest {
         controller.open();controller.reset();api.connected.complete(api.channel);
         assertThat(api.channel.closed).isTrue();
         assertThat(controller.state().visible()).isFalse();
+    }
+    @Test void resultOnSameTickIsAcceptedButCannotBeRevertedByOlderRunningSnapshot(){
+        controller.open();api.connected.complete(api.channel);
+        api.events.accept(RoomEvent.room(new RoomStateResponse(5,snapshot(5,"PLAYING"))));
+        UUID worldId=UUID.randomUUID();
+        var players=List.of(new PlayerSnapshot(id,80,192,0,false,100,0));
+        api.events.accept(RoomEvent.world(new WorldSnapshot("ABC234",5,worldId,10,players,List.of(),List.of(),"RUNNING",4790,0)));
+        api.events.accept(RoomEvent.world(new WorldSnapshot("ABC234",5,worldId,10,players,List.of(),List.of(),"ABORTED",4790,0)));
+        assertThat(controller.state().world().phase()).isEqualTo("ABORTED");
+        api.events.accept(RoomEvent.world(new WorldSnapshot("ABC234",5,worldId,10,players,List.of(),List.of(),"RUNNING",4790,0)));
+        assertThat(controller.state().world().phase()).isEqualTo("ABORTED");
     }
     @Test void errorUnlocksControlsAndBackDoesNotLeaveHiddenConnection(){
         controller.open();api.connected.complete(api.channel);controller.action("join",new JoinRoomRequest("ABC234"));

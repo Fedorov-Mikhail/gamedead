@@ -38,7 +38,8 @@ final class SocketRoomChannel implements RoomChannel,WebSocket.Listener {
             fragments.append(data);
             if(last){
                 RoomEvent event=json.readValue(fragments.toString(),RoomEvent.class);fragments.setLength(0);
-                if(event==null || event.protocolVersion()!=1 || !(event.type().equals("ROOM") && event.state()!=null || event.type().equals("WORLD") && event.world()!=null))throw new IllegalArgumentException("Invalid event");
+                if(event==null || event.protocolVersion()!=InputCommand.VERSION)throw new ApiFailure(0,"Версии клиента и сервера различаются. Обнови клиент и перезапусти сервер.");
+                if(!("ROOM".equals(event.type()) && event.state()!=null || "WORLD".equals(event.type()) && event.world()!=null))throw new IllegalArgumentException("Invalid event");
                 if(event.state()!=null && !RoomMessages.valid(event.state()))throw new IllegalArgumentException("Invalid room");
                 if(event.world()!=null && !RoomMessages.valid(event.world()))throw new IllegalArgumentException("Invalid world");
                 if(event.state()!=null)ready.complete(this);
@@ -50,7 +51,9 @@ final class SocketRoomChannel implements RoomChannel,WebSocket.Listener {
     }
     @Override public CompletionStage<?> onPing(WebSocket socket,java.nio.ByteBuffer data){socket.request(1);return socket.sendPong(data);}
     @Override public CompletionStage<?> onPong(WebSocket socket,java.nio.ByteBuffer data){socket.request(1);return null;}
-    @Override public CompletionStage<?> onClose(WebSocket socket,int code,String reason){failed(new IllegalStateException("Socket closed"));return null;}
+    @Override public CompletionStage<?> onClose(WebSocket socket,int code,String reason){
+        failed(code==1002?new ApiFailure(0,"Версии клиента и сервера различаются. Обнови клиент и перезапусти сервер."):new IllegalStateException("Socket closed"));return null;
+    }
     @Override public void onError(WebSocket socket,Throwable error){failed(error);}
     @Override public boolean input(InputCommand input){
         WebSocket connection=socket;
@@ -61,7 +64,7 @@ final class SocketRoomChannel implements RoomChannel,WebSocket.Listener {
     void failed(Throwable error){
         while(error instanceof CompletionException && error.getCause()!=null)error=error.getCause();
         boolean unauthorized=error instanceof WebSocketHandshakeException handshake && handshake.getResponse().statusCode()==401;
-        var problem=new ApiFailure(unauthorized?401:0,unauthorized?"Сессия истекла. Вернись к профилю и войди в аккаунт снова.":"Игровое соединение потеряно. Нажми «Подключиться», чтобы вернуться в течение 30 секунд.");
+        var problem=error instanceof ApiFailure existing?existing:new ApiFailure(unauthorized?401:0,unauthorized?"Сессия истекла. Вернись к профилю и войди в аккаунт снова.":"Игровое соединение потеряно. Нажми «Подключиться», чтобы вернуться в течение 30 секунд.");
         if(!ready.isDone())ready.completeExceptionally(problem);
         if(closed.get())return;
         close();failure.accept(problem);

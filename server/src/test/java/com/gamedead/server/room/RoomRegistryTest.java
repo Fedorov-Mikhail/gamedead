@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.*;
 
 class RoomRegistryTest {
     private final MutableClock clock=new MutableClock();
-    private final RoomRegistry rooms=new RoomRegistry(clock);
+    private final RoomRegistry rooms=new RoomRegistry(clock,240);
     private final UUID owner=UUID.randomUUID(), guest=UUID.randomUUID();
     private final Map<UUID,UUID> connections=new HashMap<>();
     private RoomMailbox connect(UUID account){UUID id=UUID.randomUUID();connections.put(account,id);return rooms.connect(account,"Игрок [gold]",id);}
@@ -102,6 +102,13 @@ class RoomRegistryTest {
         assertThatThrownBy(()->rooms.create(owner)).isInstanceOf(RoomProblem.class);
         connect(owner);
         assertThatThrownBy(()->rooms.join(owner,"bad/value")).isInstanceOf(RoomProblem.class);
+    }
+    @Test void leavingImmediatelyPublishesWorldWithRemainingRoster(){
+        twoReady();RoomMailbox box=rooms.connect(guest,"Друг",connections.get(guest));rooms.start(owner);
+        while(box.poll()!=null){ }
+        rooms.leave(owner);
+        assertThat(box.poll().state().room().ownerId()).isEqualTo(guest);
+        assertThat(box.poll()).isNotNull().satisfies(event->assertThat(event.world().players()).extracting(p->p.accountId()).containsExactly(guest));
     }
     @Test void slowClientReceivesLatestRoomStateInsteadOfQueuedHistory(){
         RoomMailbox box=connect(owner);rooms.create(owner);

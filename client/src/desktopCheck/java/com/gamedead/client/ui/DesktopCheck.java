@@ -45,6 +45,9 @@ public final class DesktopCheck {
                         if(current>=68 && current<=80)Gdx.input=(Input)java.lang.reflect.Proxy.newProxyInstance(Input.class.getClassLoader(),new Class<?>[]{Input.class},(proxy,method,arguments)->{
                             if(method.getName().equals("isKeyPressed") && (int)arguments[0]==Input.Keys.D)return true;
                             if(method.getName().equals("isKeyJustPressed") && (int)arguments[0]==Input.Keys.SHIFT_LEFT)return current==68;
+                            if(method.getName().equals("isButtonPressed") && (int)arguments[0]==Input.Buttons.LEFT)return true;
+                            if(method.getName().equals("getX"))return size[0]*3/4;
+                            if(method.getName().equals("getY"))return size[1]/2;
                             return method.invoke(actualInput,arguments);
                         });
                         try{game.render();}finally{Gdx.input=actualInput;}
@@ -93,12 +96,33 @@ public final class DesktopCheck {
                                 if(stage.getRoot().findActor("arena-stop")==null)throw new AssertionError("Arena HUD missing");
                                 if(api.world.players().getFirst().x()<=80)throw new AssertionError("WASD did not move the player");
                                 if(api.world.players().getFirst().dashCooldown()<=0)throw new AssertionError("Shift did not trigger dash");
+                                if(!api.attacked)throw new AssertionError("Mouse aim and attack did not reach the world");
+                                if(stage.getRoot().findActor("combat-status")==null)throw new AssertionError("Combat HUD missing");
                                 snapshot(size[0]+"-arena");click(stage,"arena-stop");
                             }
-                            case 96 -> click(stage,"room-leave");
-                            case 102 -> click(stage,"room-back");
-                            case 108 -> click(stage,"logout");
-                            case 116 -> {
+                            case 92 -> {
+                                Label result=stage.getRoot().findActor("combat-result");
+                                if(result==null || !result.getText().toString().contains("прерван"))throw new AssertionError("Aborted result missing");
+                                snapshot(size[0]+"-result");click(stage,"arena-stop");
+                            }
+                            case 96 -> click(stage,"room-ready");
+                            case 100 -> click(stage,"room-start");
+                            case 180 -> {
+                                Label result=stage.getRoot().findActor("combat-result");
+                                if(result==null || !result.getText().toString().contains("выстоял"))throw new AssertionError("Victory result missing");
+                                snapshot(size[0]+"-victory");click(stage,"arena-stop");
+                            }
+                            case 186 -> click(stage,"room-ready");
+                            case 190 -> click(stage,"room-start");
+                            case 198 -> {
+                                Label result=stage.getRoot().findActor("combat-result");
+                                if(result==null || !result.getText().toString().contains("пал"))throw new AssertionError("Defeat result missing");
+                                snapshot(size[0]+"-defeat");click(stage,"arena-stop");
+                            }
+                            case 204 -> click(stage,"room-leave");
+                            case 210 -> click(stage,"room-back");
+                            case 216 -> click(stage,"logout");
+                            case 224 -> {
                                 if (stage.getRoot().findActor("profile-name") != null) throw new AssertionError("Logout retained profile");
                                 snapshot(size[0] + "-logout");
                                 Gdx.app.exit();
@@ -111,7 +135,7 @@ public final class DesktopCheck {
             }, config);
             if (failure != null) throw new AssertionError("Desktop check failed", failure);
         }
-        System.out.println("Desktop accounts, rooms, arena, WASD and Shift checked at 1280x720 and 960x640. Screenshots: client/build/reports/desktop/");
+        System.out.println("Accounts, rooms, combat, mouse attack, WASD, Shift and all results checked at 1280x720 and 960x640. Screenshots: client/build/reports/desktop/");
     }
 
     private static TextField field(Stage stage, String name) {
@@ -152,10 +176,10 @@ public final class DesktopCheck {
     private static final class FakeApi implements GameApi {
         final UUID id = UUID.fromString("c28e03ef-f924-4dbd-afc7-9f93e7b70db6");
         String password;
-        int reads;
+        int reads,starts;
         Consumer<RoomEvent> events;
         long revision;
-        boolean ready,playing;
+        boolean ready,playing,attacked;
         RoomSnapshot room;
         UUID worldId;
         ArenaWorld world;
@@ -163,7 +187,9 @@ public final class DesktopCheck {
         final RoomChannel channel=new RoomChannel(){
             public boolean input(InputCommand input){
                 if(world==null)return false;
-                world.input(id,input.sequence(),input.x(),input.y(),input.dash());world.tick();publishWorld();return true;
+                world.input(id,input.sequence(),input.x(),input.y(),input.dash(),input.aimX(),input.aimY(),input.attack(),input.revive());
+                if(input.attack() && Math.hypot(input.aimX(),input.aimY())>0)attacked=true;
+                world.tick();publishWorld();return true;
             }
             public void close(){ }
         };
@@ -182,8 +208,16 @@ public final class DesktopCheck {
         public CompletableFuture<RoomStateResponse> room(String token,String action,Object body){
             revision++;
             if(action.equals("ready"))ready=((ReadyRequest)body).ready();
-            if(action.equals("start")){playing=true;world=new ArenaWorld(roster);worldId=UUID.randomUUID();}
-            if(action.equals("stop")){playing=false;ready=false;world=null;}
+            if(action.equals("start")){
+                playing=true;starts++;world=new ArenaWorld(roster,starts==2?1:240);worldId=UUID.randomUUID();
+                if(starts==1)for(int i=0;i<240;i++)world.tick();
+                if(starts==3)while(world.phase()==ArenaWorld.Phase.RUNNING)world.tick();
+            }
+            if(action.equals("stop")){
+                ready=false;
+                if(world!=null && world.phase()==ArenaWorld.Phase.RUNNING)world.abort();
+                else {playing=false;world=null;}
+            }
             room=action.equals("leave")?null:new RoomSnapshot("ABC234",revision,id,playing?"PLAYING":"LOBBY",List.of(
                     new RoomMember(id,"Ёж [gold]маг",ready,true,0),new RoomMember(roster.get(1),"Маг сумрака",ready,true,1),
                     new RoomMember(roster.get(2),"Лесной страж",ready,true,2),new RoomMember(roster.get(3),"Хранитель огня",ready,true,3)));
@@ -191,7 +225,10 @@ public final class DesktopCheck {
             if(playing)publishWorld();
             return CompletableFuture.completedFuture(new RoomStateResponse(revision,room));
         }
-        private void publishWorld(){events.accept(RoomEvent.world(new WorldSnapshot("ABC234",revision,worldId,world.tickNumber(),world.players().stream().map(p->new PlayerSnapshot(p.id(),p.x(),p.y(),p.dashCooldown(),p.moving())).toList())));}
+        private void publishWorld(){events.accept(RoomEvent.world(new WorldSnapshot("ABC234",revision,worldId,world.tickNumber(),
+                world.players().stream().map(p->new PlayerSnapshot(p.id(),p.x(),p.y(),p.dashCooldown(),p.moving(),p.health(),p.reviveProgress())).toList(),
+                world.enemies().stream().map(e->new EnemySnapshot(e.id(),e.x(),e.y(),e.health())).toList(),
+                world.projectiles().stream().map(p->new ProjectileSnapshot(p.id(),p.x(),p.y())).toList(),world.phase().name(),world.remainingTicks(),world.kills())));}
         public void close() { }
     }
 }

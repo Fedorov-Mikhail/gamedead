@@ -226,7 +226,12 @@ public final class GameDeadClient extends ApplicationAdapter {
                 inputTimer%=0.05f;
                 double x=(Gdx.input.isKeyPressed(Input.Keys.D)?1:0)-(Gdx.input.isKeyPressed(Input.Keys.A)?1:0);
                 double y=(Gdx.input.isKeyPressed(Input.Keys.W)?1:0)-(Gdx.input.isKeyPressed(Input.Keys.S)?1:0);
-                if(rooms.input(x,y,dashRequested))dashRequested=false;
+                var aim=arena.aim(auth.state().profile().accountId(),Gdx.input.getX(),Gdx.input.getY());
+                var cursor=stage.screenToStageCoordinates(new com.badlogic.gdx.math.Vector2(Gdx.input.getX(),Gdx.input.getY()));
+                boolean overButton=false;
+                for(Actor actor=stage.hit(cursor.x,cursor.y,true);actor!=null;actor=actor.getParent())if(actor instanceof Button){overButton=true;break;}
+                boolean attack=Gdx.input.isButtonPressed(Input.Buttons.LEFT) && !overButton;
+                if(rooms.input(x,y,dashRequested,aim.x,aim.y,attack,Gdx.input.isKeyPressed(Input.Keys.E)))dashRequested=false;
             }
             stage.getViewport().apply();
         }else{dashRequested=false;inputTimer=0;drawRunes();}

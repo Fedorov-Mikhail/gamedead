@@ -40,10 +40,16 @@ class RoomSpringTransportTest {
                 post(http,base,"first","ready","{\"ready\":true}",200);post(http,base,"second","ready","{\"ready\":true}",200);
                 var playing=post(http,base,"first","start","",200);
                 assertThat(playing.room().status()).isEqualTo("PLAYING");
-                one.sendText("{\"sequence\":1,\"x\":1,\"y\":0,\"dash\":false}",true).join();
-                assertThat(b.waitFor(e->e.world()!=null && e.world().players().getFirst().x()>80).world().players()).hasSize(2);
+                one.sendText(json.writeValueAsString(new com.gamedead.protocol.world.InputCommand(2,1,1,0,false,1,0,true,false)),true).join();
+                var moving=b.waitFor(e->e.world()!=null && e.world().players().getFirst().x()>80).world();
+                assertThat(moving.players()).hasSize(2);
+                assertThat(moving.projectiles()).isNotEmpty();
                 var stopped=post(http,base,"first","stop","",200);
-                assertThat(b.waitFor(e->e.state()!=null && e.state().revision()>=stopped.revision()).state().room().status()).isEqualTo("LOBBY");
+                assertThat(stopped.room().status()).isEqualTo("PLAYING");
+                assertThat(b.waitFor(e->e.world()!=null && e.world().phase().equals("ABORTED")).world().phase()).isEqualTo("ABORTED");
+                stopped=post(http,base,"first","stop","",200);
+                long stoppedRevision=stopped.revision();
+                assertThat(b.waitFor(e->e.state()!=null && e.state().revision()>=stoppedRevision).state().room().status()).isEqualTo("LOBBY");
                 var oversized=http.send(HttpRequest.newBuilder(URI.create(base+"/api/v1/rooms/join")).header("Authorization","Bearer first")
                         .header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString("x".repeat(9000))).build(),HttpResponse.BodyHandlers.ofString());
                 assertThat(oversized.statusCode()).isEqualTo(413);

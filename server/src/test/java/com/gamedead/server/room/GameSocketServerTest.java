@@ -23,7 +23,7 @@ class GameSocketServerTest {
     @TempDir Path temporary;
     private Tomcat tomcat;
     private GameSocketServer sockets;
-    private final RoomRegistry rooms=new RoomRegistry(Clock.systemUTC());
+    private final RoomRegistry rooms=new RoomRegistry(Clock.systemUTC(),240);
     private final UUID a=UUID.randomUUID(), b=UUID.randomUUID();
     private final JsonMapper json=JsonMapper.builder().build();
     private final HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
@@ -72,11 +72,16 @@ class GameSocketServerTest {
     }
     @Test void invalidMovementClosesOnlyItsSocket() throws Exception {
         Inbox inbox=new Inbox();var socket=connect("first",inbox);inbox.room();
-        socket.sendText("{\"sequence\":1,\"x\":999,\"y\":0,\"dash\":false}",true).join();
+        socket.sendText(json.writeValueAsString(new InputCommand(2,1,999,0,false,0,0,false,false)),true).join();
         assertThat(inbox.closed.get(4,TimeUnit.SECONDS)).isEqualTo(1008);
     }
     @Test void handshakeWithoutAccountIsRejected() {
         assertThatThrownBy(()->client.newWebSocketBuilder().buildAsync(URI.create(url),new Inbox()).join()).hasCauseInstanceOf(WebSocketHandshakeException.class);
+    }
+    @Test void olderClientCannotSendUnversionedMovementIntoCombat() throws Exception {
+        Inbox inbox=new Inbox();var socket=connect("first",inbox);inbox.room();
+        socket.sendText("{\"sequence\":1,\"x\":1,\"y\":0,\"dash\":false}",true).join();
+        assertThat(inbox.closed.get(4,TimeUnit.SECONDS)).isEqualTo(1002);
     }
     @Test void revokingEstablishedSessionClosesSocketAndClearsPresence() throws Exception {
         Inbox inbox=new Inbox();connect("first",inbox);inbox.room();
