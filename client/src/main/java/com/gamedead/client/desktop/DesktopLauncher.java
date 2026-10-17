@@ -25,7 +25,7 @@ public final class DesktopLauncher {
         configuration.setWindowSizeLimits(960, 640, -1, -1);
         configuration.useVsync(true);
         configuration.setForegroundFPS(60);
-        try { new Lwjgl3Application(new GameDeadClient(api, address), configuration); }
+        try { new Lwjgl3Application(new GameDeadClient(api), configuration); }
         finally { api.close(); }
     }
 }

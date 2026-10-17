@@ -18,6 +18,7 @@ final class ArenaRenderer implements Disposable {
     private final Map<String,TextureRegion> regions=new HashMap<>();
     private final Map<UUID,Position> positions=new HashMap<>();
     private final Map<Long,Position> enemyPositions=new HashMap<>();
+    private final Map<Long,ProjectileMotion> shots=new HashMap<>();
     private final SpriteBatch batch=new SpriteBatch();
     private final ShapeRenderer shapes=new ShapeRenderer();
     private final FitViewport viewport=new FitViewport(ArenaMap.WIDTH,512);
@@ -50,7 +51,7 @@ final class ArenaRenderer implements Disposable {
         resize(Gdx.graphics.getWidth(),Gdx.graphics.getHeight());
     }
     void accept(WorldSnapshot next){
-        if(world==null || !world.worldId().equals(next.worldId())){positions.clear();enemyPositions.clear();}
+        if(world==null || !world.worldId().equals(next.worldId())){positions.clear();enemyPositions.clear();shots.clear();}
         world=next;
         positions.keySet().removeIf(id->next.players().stream().noneMatch(p->p.accountId().equals(id)));
         for(var player:next.players()){
@@ -59,25 +60,37 @@ final class ArenaRenderer implements Disposable {
             if(Math.abs(player.x()-p.targetX)>0.1)p.left=player.x()<p.targetX;
             p.targetX=(float)player.x();p.targetY=(float)player.y();p.moving=player.moving();
             if(player.health()<p.health)p.flash=0.2f;
-            p.health=player.health();p.revive=(float)player.reviveProgress();
+            p.health=player.health();p.maxHealth=player.maxHealth();p.revive=(float)player.reviveProgress();
         }
         enemyPositions.keySet().removeIf(id->next.enemies().stream().noneMatch(e->e.id()==id));
         for(var enemy:next.enemies()){
             Position p=enemyPositions.computeIfAbsent(enemy.id(),ignored->new Position((float)enemy.x(),(float)enemy.y()));
-            p.left=enemy.x()<p.targetX;p.targetX=(float)enemy.x();p.targetY=(float)enemy.y();p.health=enemy.health();
+            p.left=enemy.action().equals("MOVE")?enemy.x()<p.targetX:enemy.aimX()<0;
+            p.targetX=(float)enemy.x();p.targetY=(float)enemy.y();p.health=enemy.health();p.maxHealth=enemy.maxHealth();
         }
+        shots.keySet().removeIf(id->next.projectiles().stream().noneMatch(p->p.id()==id));
+        for(var shot:next.projectiles())shots.computeIfAbsent(shot.id(),ignored->new ProjectileMotion(shot.x(),shot.y())).accept(shot.x(),shot.y());
     }
     void draw(float delta,RoomSnapshot room){
         if(world==null)return;
         time+=delta;viewport.apply();batch.setProjectionMatrix(viewport.getCamera().combined);
         batch.begin();batch.setColor(Color.WHITE);
         for(int y=0;y<ArenaMap.ROWS;y++)for(int x=0;x<ArenaMap.COLUMNS;x++){
+            batch.setColor(Color.WHITE);
             draw("floor_"+(1+(x*17+y*5)%8),x*16,y*16,16,16);
-            if(ArenaMap.wall(x,y))draw(y==ArenaMap.ROWS-1?"wall_top_mid":"wall_mid",x*16,y*16,16,16);
+            if(ArenaMap.wall(x,y)){
+                batch.setColor(0.32f,0.36f,0.46f,1);
+                draw((x+y)%2==0?"wall_hole_1":"wall_hole_2",x*16,y*16,16,16);
+            }
         }
+        batch.setColor(Color.WHITE);
         batch.end();
         Gdx.gl.glEnable(GL20.GL_BLEND);Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA,GL20.GL_ONE_MINUS_SRC_ALPHA);
         shapes.setProjectionMatrix(viewport.getCamera().combined);shapes.begin(ShapeRenderer.ShapeType.Filled);
+        for(var enemy:world.enemies()){
+            Position p=enemyPositions.get(enemy.id());smooth(p,delta);
+            warning(enemy,p);
+        }
         for(var member:room.members()){
             Position p=positions.get(member.accountId());if(p==null)continue;
             smooth(p,delta);
@@ -85,27 +98,45 @@ final class ArenaRenderer implements Disposable {
             shapes.setColor(color.r,color.g,color.b,0.35f);shapes.ellipse(p.x-7,p.y-3,14,6,16);
             shapes.setColor(0.12f,0.12f,0.15f,1);shapes.rect(p.x-10,p.y+27,20,3);
             shapes.setColor(p.health>0?Color.valueOf("91d6a0"):Color.valueOf("ffa99d"));
-            shapes.rect(p.x-10,p.y+27,20*p.health/100f,3);
+            shapes.rect(p.x-10,p.y+27,20f*p.health/p.maxHealth,3);
             if(p.revive>0){shapes.setColor(COLORS[0]);shapes.rect(p.x-12,p.y-7,24*p.revive,2);}
         }
-        for(Position p:enemyPositions.values()){
-            smooth(p,delta);
-            shapes.setColor(0.15f,0.07f,0.08f,1);shapes.rect(p.x-6,p.y+14,12,2);
-            shapes.setColor(0.9f,0.32f,0.3f,1);shapes.rect(p.x-6,p.y+14,12*p.health/60f,2);
+        for(var enemy:world.enemies()){
+            Position p=enemyPositions.get(enemy.id());
+            float width=enemy.kind().equals("BOSS")?64:enemy.kind().equals("SHAMAN")?18:12;
+            float y=p.y+(enemy.kind().equals("BOSS")?62:enemy.kind().equals("SHAMAN")?22:14);
+            shapes.setColor(0.15f,0.07f,0.08f,1);shapes.rect(p.x-width/2,y,width,enemy.kind().equals("BOSS")?5:2);
+            shapes.setColor(enemy.kind().equals("BOSS")?Color.valueOf("f0cc7e"):Color.valueOf("e6524d"));
+            shapes.rect(p.x-width/2,y,width*p.health/p.maxHealth,enemy.kind().equals("BOSS")?5:2);
         }
         for(var shot:world.projectiles()){
-            shapes.setColor(0.3f,0.6f,1,0.25f);shapes.circle((float)shot.x(),(float)shot.y(),4,12);
-            shapes.setColor(0.75f,0.9f,1,1);shapes.circle((float)shot.x(),(float)shot.y(),2,12);
+            ProjectileMotion motion=shots.get(shot.id());motion.update(delta);
+            float x=(float)motion.x(),y=(float)motion.y();
+            if(shot.hostile())shapes.setColor(1,0.2f,0.15f,0.3f);else shapes.setColor(0.3f,0.6f,1,0.25f);
+            shapes.circle(x,y,4,12);
+            shapes.setColor(shot.hostile()?Color.SALMON:Color.valueOf("bfe5ff"));shapes.circle(x,y,2,12);
         }
         Vector2 cursor=pointer(Gdx.input.getX(),Gdx.input.getY());
         if(cursor!=null && world.phase().equals("RUNNING")){
             shapes.setColor(COLORS[0]);shapes.rect(cursor.x-4,cursor.y,8,0.7f);shapes.rect(cursor.x,cursor.y-4,0.7f,8);
         }
         shapes.end();batch.begin();
-        for(Position p:enemyPositions.values()){
-            batch.setColor(Color.WHITE);
-            int frame=world.phase().equals("RUNNING")?(int)(time*8)%4:0;
-            draw("tiny_zombie_run_anim_f"+frame,p.x+(p.left?8:-8),p.y-4,p.left?-16:16,16);
+        for(var enemy:world.enemies()){
+            Position p=enemyPositions.get(enemy.id());
+            boolean move=enemy.action().equals("MOVE") || enemy.action().equals("CHARGE");
+            int frame=world.phase().equals("RUNNING")?(int)(time*(enemy.action().equals("CHARGE")?16:8))%4:0;
+            String sprite=switch(enemy.kind()){
+                case "RUNNER"->"goblin_"+(move?"run":"idle")+"_anim_f";
+                case "SHAMAN"->"necromancer_anim_f";
+                case "BOSS"->"big_demon_"+(move?"run":"idle")+"_anim_f";
+                default->"tiny_zombie_"+(move?"run":"idle")+"_anim_f";
+            };
+            boolean boss=enemy.kind().equals("BOSS");
+            float width=boss?64:16,height=boss?72:enemy.kind().equals("SHAMAN")?23:16;
+            float lean=enemy.action().equals("ATTACK")?3:enemy.action().equals("WINDUP")?-2:0;
+            batch.setColor(enemy.action().equals("WINDUP")?Color.valueOf("ffd78d"):enemy.action().equals("ATTACK") || enemy.action().equals("CHARGE")?Color.SALMON:Color.WHITE);
+            draw(sprite+frame,p.x+(p.left?width/2:-width/2)+(float)enemy.aimX()*lean,p.y-(boss?16:4)+(float)enemy.aimY()*lean,p.left?-width:width,height);
+            if(boss){font.setColor(UiTheme.GOLD);text.setText(font,"Владыка сумрака");font.draw(batch,text,p.x-text.width/2,p.y+80);}
         }
         var ordered=room.members().stream().filter(m->positions.containsKey(m.accountId())).sorted(Comparator.comparingDouble(m->-positions.get(m.accountId()).y)).toList();
         for(var member:ordered){
@@ -121,12 +152,30 @@ final class ArenaRenderer implements Disposable {
         }
         batch.setColor(Color.WHITE);batch.end();font.setColor(Color.WHITE);
     }
+    private void warning(EnemySnapshot enemy,Position p){
+        if(!world.phase().equals("RUNNING") || !(enemy.action().equals("WINDUP") || enemy.action().equals("ATTACK") || enemy.action().equals("CHARGE")))return;
+        boolean windup=enemy.action().equals("WINDUP");
+        shapes.setColor(1,windup?0.66f:0.16f,0.12f,windup?0.2f+0.1f*(float)Math.sin(time*12):0.32f);
+        float aimX=(float)enemy.aimX(),aimY=(float)enemy.aimY();
+        if(enemy.kind().equals("ZOMBIE")){
+            float angle=(float)Math.toDegrees(Math.atan2(aimY,aimX));
+            shapes.arc(p.x,p.y,20,angle-84.26f,168.52f,24);
+        }else{
+            float length=enemy.kind().equals("BOSS")?360:enemy.kind().equals("RUNNER")?90:180;
+            if(enemy.action().equals("CHARGE"))length=enemy.actionTicks()*(enemy.kind().equals("BOSS")?12:9);
+            float radius=enemy.kind().equals("SHAMAN")?2:(float)enemy.radius();
+            for(float step=4;step<=length;step+=4){
+                if(ArenaMap.blocked(enemy.x()+aimX*step,enemy.y()+aimY*step,radius)){length=step-4;break;}
+            }
+            shapes.rectLine(p.x,p.y,p.x+aimX*length,p.y+aimY*length,enemy.kind().equals("SHAMAN")?4:(radius+5)*2);
+        }
+    }
     private void draw(String key,float x,float y,float width,float height){batch.draw(regions.get(key),x,y,width,height);}
     private void smooth(Position p,float delta){float alpha=1-(float)Math.exp(-delta*20);p.x+=(p.targetX-p.x)*alpha;p.y+=(p.targetY-p.y)*alpha;p.flash=Math.max(0,p.flash-delta);}
     void resize(int width,int height){viewport.update(width,height,false);viewport.getCamera().position.set(ArenaMap.WIDTH/2f,ArenaMap.HEIGHT/2f,0);viewport.getCamera().update();}
     @Override public void dispose(){texture.dispose();batch.dispose();shapes.dispose();}
     private static final class Position {
-        float x,y,targetX,targetY,flash,revive;int health=100;boolean moving,left;
+        float x,y,targetX,targetY,flash,revive;int health=100,maxHealth=100;boolean moving,left;
         Position(float x,float y){this.x=targetX=x;this.y=targetY=y;}
     }
 }

@@ -18,4 +18,6 @@ public class RoomController {
     @PostMapping("/start") public RoomStateResponse start(@AuthenticationPrincipal AccountPrincipal p){return rooms.start(p.accountId());}
     @PostMapping("/stop") public RoomStateResponse stop(@AuthenticationPrincipal AccountPrincipal p){return rooms.stop(p.accountId());}
     @PostMapping("/leave") public RoomStateResponse leave(@AuthenticationPrincipal AccountPrincipal p){return rooms.leave(p.accountId());}
+    @PostMapping("/upgrade") public RoomStateResponse upgrade(@AuthenticationPrincipal AccountPrincipal p,@RequestBody UpgradeRequest request){return rooms.upgrade(p.accountId(),request);}
+    @PostMapping("/difficulty") public RoomStateResponse difficulty(@AuthenticationPrincipal AccountPrincipal p,@RequestBody DifficultyRequest request){return rooms.difficulty(p.accountId(),request);}
 }

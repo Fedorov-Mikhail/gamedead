@@ -3,6 +3,7 @@ package com.gamedead.client.auth;
 import com.gamedead.client.net.*;
 import com.gamedead.protocol.account.PlayerProfileResponse;
 import com.gamedead.protocol.auth.*;
+import com.gamedead.protocol.match.*;
 import org.junit.jupiter.api.*;
 import java.time.Instant;
 import java.util.*;
@@ -136,6 +137,32 @@ class AuthControllerTest {
         assertThat(controller.state().busy()).isFalse();
     }
 
+    @Test void historyUsesSessionAndBackReloadsAccountXp() {
+        openProfile();
+        controller.showHistory();
+        assertThat(api.historyToken).isEqualTo("session-secret");
+        assertThat(controller.state().view()).isEqualTo(AuthState.View.HISTORY);
+        api.history.complete(new MatchHistoryResponse(List.of()));
+        assertThat(controller.state().busy()).isFalse();
+        assertThat(controller.state().matches()).isEmpty();
+        api.loaded=new CompletableFuture<>();
+        controller.backToProfile();
+        assertThat(api.profileCalls).isEqualTo(2);
+        api.loaded.complete(new PlayerProfileResponse(profile.accountId(),"mage","Ёж маг",120,"default"));
+        assertThat(controller.state().profile().accountXp()).isEqualTo(120);
+        assertThat(controller.state().view()).isEqualTo(AuthState.View.PROFILE);
+    }
+
+    @Test void lateHistoryCannotRestoreSessionAfterLogout() {
+        openProfile();
+        api.history=new CompletableFuture<>(){@Override public boolean cancel(boolean ignored){return false;}};
+        controller.showHistory();controller.logout();api.loggedOut.complete(null);
+        api.history.complete(new MatchHistoryResponse(List.of()));
+        assertThat(controller.state().view()).isEqualTo(AuthState.View.LOGIN);
+        assertThat(controller.state().profile()).isNull();
+        assertThat(controller.state().matches()).isEmpty();
+    }
+
     private void finishLogin() {
         api.authenticated.complete(new LoginResponse("session-secret", "Bearer", Instant.parse("2099-01-01T00:00:00Z")));
     }
@@ -152,6 +179,8 @@ class AuthControllerTest {
         CompletableFuture<LoginResponse> authenticated = new CompletableFuture<>();
         CompletableFuture<PlayerProfileResponse> loaded = new CompletableFuture<>();
         CompletableFuture<Void> loggedOut = new CompletableFuture<>();
+        CompletableFuture<MatchHistoryResponse> history = new CompletableFuture<>();
+        String historyToken;
         RegisterRequest registration;
         LoginRequest credentials;
         int loginCalls;
@@ -162,6 +191,7 @@ class AuthControllerTest {
         public CompletableFuture<LoginResponse> login(LoginRequest request) { credentials = request; loginCalls++; return authenticated; }
         public CompletableFuture<PlayerProfileResponse> profile(String token) { profileToken = token; profileCalls++; return loaded; }
         public CompletableFuture<Void> logout(String token) { logoutToken = token; return loggedOut; }
+        public CompletableFuture<MatchHistoryResponse> history(String token) { historyToken=token;return history; }
         public void close() { }
     }
 }

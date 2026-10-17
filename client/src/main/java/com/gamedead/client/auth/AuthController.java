@@ -40,7 +40,7 @@ public final class AuthController implements AutoCloseable {
     public void showLogin() { navigate(AuthState.View.LOGIN); }
 
     private void navigate(AuthState.View view) {
-        if (closed || state.busy() || state.view() == AuthState.View.PROFILE) return;
+        if (closed || state.busy() || token!=null) return;
         invalidate();
         publish(view, false, state.login(), "", false, Map.of(), null);
     }
@@ -92,6 +92,24 @@ public final class AuthController implements AutoCloseable {
     public void refreshProfile() {
         if (closed || state.busy() || state.view() != AuthState.View.PROFILE || token == null) return;
         loadProfile(begin(state.login(), "Обновляем профиль…"), false);
+    }
+
+    public void showHistory() {
+        if(closed || token==null || state.busy() || state.view()!=AuthState.View.PROFILE)return;
+        invalidate();long operation=generation;
+        publish(AuthState.View.HISTORY,true,state.login(),"Загружаем историю…",false,Map.of(),state.profile());
+        watch(api.history(token),operation,(history,failure)->{
+            if(failure!=null){fail(failure,failure.status()==401);return;}
+            state=new AuthState(AuthState.View.HISTORY,false,state.login(),"",false,Map.of(),state.profile(),history.matches());
+            listener.accept(state);
+        });
+    }
+
+    public void backToProfile() {
+        if(closed || token==null || state.view()!=AuthState.View.HISTORY)return;
+        invalidate();long operation=generation;
+        publish(AuthState.View.PROFILE,true,state.login(),"Обновляем профиль…",false,Map.of(),state.profile());
+        loadProfile(operation,false);
     }
 
     private void loadProfile(long operation, boolean entering) {

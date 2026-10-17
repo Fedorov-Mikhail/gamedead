@@ -4,6 +4,7 @@ import com.gamedead.protocol.account.PlayerProfileResponse;
 import com.gamedead.protocol.auth.*;
 import com.gamedead.protocol.error.ApiError;
 import com.gamedead.protocol.room.*;
+import com.gamedead.protocol.match.MatchHistoryResponse;
 import java.util.function.Consumer;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -57,8 +58,11 @@ public final class HttpGameApi implements GameApi {
     @Override public CompletableFuture<Void> logout(String token) {
         return send("/api/v1/auth/logout", "", token, 204, Void.class);
     }
+    @Override public CompletableFuture<MatchHistoryResponse> history(String token) {
+        return send("/api/v1/matches/me",null,token,200,MatchHistoryResponse.class);
+    }
     @Override public CompletableFuture<RoomStateResponse> room(String token,String action,Object body) {
-        if(!Set.of("me","create","join","ready","start","stop","leave").contains(action))throw new IllegalArgumentException("Unknown room operation");
+        if(!Set.of("me","create","join","ready","start","stop","leave","upgrade","difficulty").contains(action))throw new IllegalArgumentException("Unknown room operation");
         return send("/api/v1/rooms/"+action,action.equals("me")?null:body==null?"":body,token,action.equals("create")?201:200,RoomStateResponse.class);
     }
     @Override public CompletableFuture<RoomChannel> connectRooms(String token,Consumer<RoomEvent> events,Consumer<ApiFailure> failure) {
@@ -113,6 +117,7 @@ public final class HttpGameApi implements GameApi {
             case RegisterResponse r -> r.accountId() != null && r.login() != null && r.displayName() != null;
             case PlayerProfileResponse r -> r.accountId() != null && r.login() != null && r.displayName() != null && r.accountXp() >= 0;
             case RoomStateResponse r -> RoomMessages.valid(r);
+            case MatchHistoryResponse r -> RoomMessages.valid(r);
             case null, default -> false;
         };
         if (!valid) throw new IllegalArgumentException("Incomplete response");
@@ -137,6 +142,10 @@ public final class HttpGameApi implements GameApi {
                 case "ALREADY_IN_ROOM" -> "Ты уже состоишь в комнате.";
                 case "ROOM_PLAYING" -> "В комнате уже началась тренировка.";
                 case "ROOM_NOT_READY" -> "Нужны хотя бы два подключённых игрока. Все должны нажать «Готов».";
+                case "INVALID_UPGRADE" -> "Предложение изменилось. Выбери доступное улучшение.";
+                case "INVALID_DIFFICULTY" -> "Выбери доступную сложность в комнате.";
+                case "ROOM_STARTING" -> "Забег готовится. Подожди несколько секунд.";
+                case "SAVE_UNAVAILABLE" -> "Не удалось сохранить начало забега. Попробуй позже.";
                 case "NOT_OWNER" -> "Это действие доступно владельцу комнаты.";
                 case "NOT_CONNECTED" -> "Игровое соединение ещё не установлено. Нажми «Подключиться».";
                 case "INVALID_ROOM_CODE" -> "Введи код комнаты: 6 букв или цифр.";

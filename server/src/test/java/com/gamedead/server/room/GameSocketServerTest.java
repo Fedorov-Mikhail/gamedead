@@ -23,7 +23,7 @@ class GameSocketServerTest {
     @TempDir Path temporary;
     private Tomcat tomcat;
     private GameSocketServer sockets;
-    private final RoomRegistry rooms=new RoomRegistry(Clock.systemUTC(),240);
+    private final RoomRegistry rooms=new RoomRegistry(Clock.systemUTC(),240,RoomTestJournal.create(Clock.systemUTC()));
     private final UUID a=UUID.randomUUID(), b=UUID.randomUUID();
     private final JsonMapper json=JsonMapper.builder().build();
     private final HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
@@ -72,7 +72,7 @@ class GameSocketServerTest {
     }
     @Test void invalidMovementClosesOnlyItsSocket() throws Exception {
         Inbox inbox=new Inbox();var socket=connect("first",inbox);inbox.room();
-        socket.sendText(json.writeValueAsString(new InputCommand(2,1,999,0,false,0,0,false,false)),true).join();
+        socket.sendText(json.writeValueAsString(new InputCommand(InputCommand.VERSION,1,999,0,false,0,0,false,false)),true).join();
         assertThat(inbox.closed.get(4,TimeUnit.SECONDS)).isEqualTo(1008);
     }
     @Test void handshakeWithoutAccountIsRejected() {

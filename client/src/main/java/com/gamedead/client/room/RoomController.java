@@ -14,10 +14,12 @@ public final class RoomController implements AutoCloseable {
     private RoomState state=new RoomState(false,false,false,null,null,"",false);
     private RoomChannel channel;
     private CompletableFuture<?> pending;
+    private CompletableFuture<RoomStateResponse> pendingUpgrade;
     private long generation,revision=-1,sequence;
     private boolean closed;
     public RoomController(AuthController auth,Executor ui,Consumer<RoomState> listener){this.auth=auth;this.ui=ui;this.listener=listener;}
     public RoomState state(){return state;}
+    public boolean upgradePending(){return pendingUpgrade!=null;}
     public void open(){if(!closed && !state.visible())connect();}
     public void connect(){
         if(closed || state.busy())return;
@@ -46,6 +48,27 @@ public final class RoomController implements AutoCloseable {
             publish(true,true,false,state.room(),state.world(),"",false);
         }));
     }
+    public void chooseUpgrade(int index){
+        WorldSnapshot world=state.world();
+        if(closed || !state.connected() || state.busy() || pendingUpgrade!=null || world==null || !world.phase().equals("RUNNING") || auth.state().profile()==null)return;
+        var player=world.players().stream().filter(p->p.accountId().equals(auth.state().profile().accountId())).findFirst().orElse(null);
+        if(player==null || player.pendingUpgrades()==0 || index<0 || index>=player.upgradeOffers().size())return;
+        long operation=generation,choice=player.choiceId();
+        var request=auth.room("upgrade",new UpgradeRequest(world.worldId(),choice,player.upgradeOffers().get(index)));
+        pendingUpgrade=request;
+        publish(true,true,state.busy(),state.room(),world,"",false);
+        request.whenComplete((value,error)->ui.execute(()->{
+            if(closed || operation!=generation || pendingUpgrade!=request)return;
+            pendingUpgrade=null;
+            WorldSnapshot current=state.world();
+            if(current==null || !current.worldId().equals(world.worldId()))return;
+            var self=current.players().stream().filter(p->p.accountId().equals(player.accountId())).findFirst().orElse(null);
+            if(self==null || self.choiceId()!=choice){publish(true,state.connected(),state.busy(),state.room(),current,state.message(),state.error());return;}
+            if(error!=null){publish(true,state.connected(),state.busy(),state.room(),current,failure(error).getMessage(),true);return;}
+            accept(value);
+            publish(true,state.connected(),state.busy(),state.room(),state.world(),"",false);
+        }));
+    }
     private void event(RoomEvent event){
         if(event.state()!=null)accept(event.state());
         else if(event.world()!=null){
@@ -53,8 +76,9 @@ public final class RoomController implements AutoCloseable {
             if(room==null || !room.status().equals("PLAYING") || !room.code().equals(next.roomCode()) || next.roomVersion()<room.version())return;
             WorldSnapshot current=state.world();
             if(current!=null && current.worldId().equals(next.worldId())
-                    && (next.tick()<current.tick() || (next.tick()==current.tick()
-                    && (next.phase().equals(current.phase()) || !current.phase().equals("RUNNING")))))return;
+                    && (next.tick()<current.tick() || next.roomVersion()<current.roomVersion()
+                    || !current.phase().equals("RUNNING") && next.phase().equals("RUNNING")
+                    || next.tick()==current.tick() && next.roomVersion()==current.roomVersion() && next.phase().equals(current.phase())))return;
             publish(true,state.connected(),state.busy(),room,next,state.message(),state.error());
         }
     }
@@ -69,6 +93,7 @@ public final class RoomController implements AutoCloseable {
         generation++;
         if(channel!=null){channel.close();channel=null;}
         if(pending!=null){pending.cancel(true);pending=null;}
+        if(pendingUpgrade!=null){pendingUpgrade.cancel(true);pendingUpgrade=null;}
         publish(true,false,false,state.room(),null,failure.getMessage(),true);
     }
     public boolean input(double x,double y,boolean dash,double aimX,double aimY,boolean attack,boolean revive){
@@ -81,6 +106,7 @@ public final class RoomController implements AutoCloseable {
         generation++;revision=-1;sequence=0;
         if(channel!=null){channel.close();channel=null;}
         if(pending!=null){pending.cancel(true);pending=null;}
+        if(pendingUpgrade!=null){pendingUpgrade.cancel(true);pendingUpgrade=null;}
         state=new RoomState(false,false,false,null,null,"",false);
     }
     private ApiFailure failure(Throwable error){

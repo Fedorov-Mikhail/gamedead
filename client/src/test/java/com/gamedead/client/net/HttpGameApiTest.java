@@ -2,11 +2,14 @@ package com.gamedead.client.net;
 
 import com.gamedead.protocol.auth.*;
 import com.gamedead.protocol.room.JoinRoomRequest;
+import com.gamedead.protocol.room.UpgradeRequest;
+import java.util.UUID;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -75,7 +78,7 @@ class HttpGameApiTest {
         assertThat(authorization.get()).isEqualTo("Bearer session-value");
     }
     @Test void roomJoinUsesAuthenticatedJsonAndReadsVersionedState(){
-        route("/api/v1/rooms/join",200,"{\"revision\":12,\"room\":{\"code\":\"ABC234\",\"version\":12,\"ownerId\":\""+ACCOUNT+"\",\"status\":\"LOBBY\",\"members\":[{\"accountId\":\""+ACCOUNT+"\",\"displayName\":\"Маг\",\"ready\":false,\"connected\":true,\"color\":0}]}}");
+        route("/api/v1/rooms/join",200,"{\"revision\":12,\"room\":{\"code\":\"ABC234\",\"version\":12,\"ownerId\":\""+ACCOUNT+"\",\"status\":\"LOBBY\",\"difficulty\":\"NORMAL\",\"members\":[{\"accountId\":\""+ACCOUNT+"\",\"displayName\":\"Маг\",\"ready\":false,\"connected\":true,\"color\":0}]}}");
         var state=api.room("session-value","join",new JoinRoomRequest("ABC234")).join();
         assertThat(state.room().members().getFirst().displayName()).isEqualTo("Маг");
         assertThat(authorization.get()).isEqualTo("Bearer session-value");
@@ -84,6 +87,27 @@ class HttpGameApiTest {
     @Test void fullRoomIsNotReportedAsTakenLogin(){
         route("/api/v1/rooms/join",409,"{\"code\":\"ROOM_FULL\",\"message\":\"internal details\",\"fieldErrors\":{}}");
         assertThat(failure(api.room("token","join",new JoinRoomRequest("ABC234"))).getMessage()).contains("четыре игрока").doesNotContain("логин","internal");
+    }
+    @ParameterizedTest @CsvSource({"INVALID_UPGRADE,409,улучшение","ROOM_STARTING,409,готовится","SAVE_UNAVAILABLE,503,сохранить"})
+    void progressionFailuresHaveActionSpecificSafeMessages(String code,int status,String expected){
+        route("/api/v1/rooms/upgrade",status,"{\"code\":\""+code+"\",\"message\":\"server internals\",\"fieldErrors\":{}}");
+        String message=failure(api.room("token","upgrade",new UpgradeRequest(UUID.randomUUID(),1,"POWER"))).getMessage();
+        assertThat(message).contains(expected).doesNotContain("логин","server internals");
+    }
+    @Test void upgradesUseAuthenticatedPostWithExactWorldAndChoice(){
+        route("/api/v1/rooms/upgrade",200,"{\"revision\":12,\"room\":null}");
+        UUID world=UUID.randomUUID();
+        api.room("session-value","upgrade",new UpgradeRequest(world,3,"POWER")).join();
+        assertThat(authorization.get()).isEqualTo("Bearer session-value");
+        assertThat(json.readTree(body.get()).get("worldId").asString()).isEqualTo(world.toString());
+        assertThat(json.readTree(body.get()).get("choiceId").asInt()).isEqualTo(3);
+        assertThat(json.readTree(body.get()).get("upgrade").asString()).isEqualTo("POWER");
+    }
+    @Test void historyUsesAuthenticatedGet(){
+        route("/api/v1/matches/me",200,"{\"matches\":[]}");
+        assertThat(api.history("session-value").join().matches()).isEmpty();
+        assertThat(authorization.get()).isEqualTo("Bearer session-value");
+        assertThat(body.get()).isEmpty();
     }
 
     @ParameterizedTest @ValueSource(ints = {400, 401, 409, 415, 429, 500})

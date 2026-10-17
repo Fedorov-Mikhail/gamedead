@@ -11,12 +11,15 @@ import com.badlogic.gdx.utils.viewport.ExtendViewport;
 import com.gamedead.client.auth.*;
 import com.gamedead.client.net.GameApi;
 import com.gamedead.client.room.*;
+import com.gamedead.game.Upgrade;
+import com.gamedead.game.Difficulty;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
 public final class GameDeadClient extends ApplicationAdapter {
     private final GameApi api;
-    private final String serverAddress;
     private Stage stage;
     private UiTheme theme;
     private ShapeRenderer shapes;
@@ -34,9 +37,8 @@ public final class GameDeadClient extends ApplicationAdapter {
     private boolean wasBusy;
     private float time;
 
-    public GameDeadClient(GameApi api, String serverAddress) {
+    public GameDeadClient(GameApi api) {
         this.api = api;
-        this.serverAddress = serverAddress;
     }
 
     @Override public void create() {
@@ -54,7 +56,7 @@ public final class GameDeadClient extends ApplicationAdapter {
     private void show(AuthState state) {
         if(state.view()!=AuthState.View.PROFILE && rooms!=null)rooms.reset();
         if(rooms!=null && rooms.state().visible() && state.view()==AuthState.View.PROFILE)return;
-        boolean rebuild = currentView != state.view() || (state.view() == AuthState.View.PROFILE && !state.busy());
+        boolean rebuild = currentView != state.view() || ((state.view() == AuthState.View.PROFILE || state.view()==AuthState.View.HISTORY) && !state.busy());
         if (rebuild) build(state);
         else if (wasBusy && !state.busy()) clearPasswords();
         fields.forEach(field -> field.setDisabled(state.busy()));
@@ -94,7 +96,7 @@ public final class GameDeadClient extends ApplicationAdapter {
         Label description = label("Собери отряд. Переживи натиск.\nРазорви древнюю печать.", "default");
         description.setColor(UiTheme.MUTED);
         brand.add(description).left().padBottom(36).row();
-        brand.add(label("2–4 ИГРОКА   •   30 МИНУТ НА ЗАБЕГ", "small")).left().row();
+        brand.add(label("2–4 ИГРОКА", "small")).left().row();
         root.add(brand).expandX().fillX().padRight(32);
 
         Table form = new Table();
@@ -102,10 +104,8 @@ public final class GameDeadClient extends ApplicationAdapter {
         form.pad(26);
         form.defaults().growX();
         if (state.view() == AuthState.View.PROFILE) buildProfile(form, state);
+        else if(state.view()==AuthState.View.HISTORY)buildHistory(form,state);
         else buildForm(form, state);
-        Label server = label("Сервер: " + serverAddress, "small");
-        server.setWrap(true);
-        form.add(server).padTop(20).row();
         ScrollPane scroll = new ScrollPane(form, theme.skin);
         scroll.setScrollingDisabled(true, false);
         scroll.setFadeScrollBars(false);
@@ -162,9 +162,34 @@ public final class GameDeadClient extends ApplicationAdapter {
         form.add(note).padBottom(20).row();
         addStatus(form);
         form.add(button("Играть с друзьями", "rooms", rooms::open)).height(46).padTop(10).row();
+        form.add(button("История забегов", "history", auth::showHistory)).height(46).padTop(10).row();
         form.add(button("Обновить профиль", "refresh", auth::refreshProfile)).height(46).padTop(10).row();
         form.add(button("Выйти из аккаунта", "logout", auth::logout)).height(46).padTop(10).row();
         form.add(button("Закрыть игру", "close", () -> Gdx.app.exit())).height(44).padTop(10).row();
+    }
+
+    private void buildHistory(Table form,AuthState state){
+        form.add(label("История забегов","heading")).left().padBottom(10).row();
+        form.add(label("Последние 20 завершённых забегов","small")).left().padBottom(14).row();
+        if(!state.busy() && state.matches().isEmpty()){
+            Label empty=label("Завершённых забегов пока нет.","default");empty.setName("history-empty");empty.setWrap(true);
+            form.add(empty).padBottom(12).row();
+        }
+        int row=0;
+        for(var match:state.matches()){
+            String outcome=switch(match.status()){case "WON"->"Победа";case "LOST"->"Поражение";case "INTERRUPTED"->"Сервер перезапущен";default->"Прерван";};
+            String date=DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm").withZone(ZoneId.systemDefault()).format(match.finishedAt());
+            String build=match.upgrades().entrySet().stream().sorted(java.util.Map.Entry.comparingByKey())
+                    .map(rank->Upgrade.valueOf(rank.getKey()).title()+" "+rank.getValue()).collect(java.util.stream.Collectors.joining(", "));
+            String text=outcome+" · "+date+" · "+Difficulty.valueOf(match.difficulty()).title()+"\n"+String.format("%02d:%02d",match.durationSeconds()/60,match.durationSeconds()%60)
+                    +" · Уровень "+match.level()+" · +"+match.accountXp()+" XP\n"
+                    +"Убийства: "+match.kills()+" / отряд "+match.teamKills()+" · Урон: "+match.damage()+"\n"
+                    +(build.isEmpty()?"Без улучшений":build);
+            Label item=label(text,"small");item.setName("history-match-"+row++);item.setWrap(true);
+            form.add(item).padBottom(18).row();
+        }
+        addStatus(form);
+        form.add(button("К профилю","history-back",auth::backToProfile)).height(46).padTop(8).row();
     }
 
     private TextField field(Table form, String title, String value, String name, boolean password) {
@@ -222,6 +247,9 @@ public final class GameDeadClient extends ApplicationAdapter {
             arena.draw(delta,rooms.state().room());
             inputTimer+=delta;
             dashRequested|=Gdx.input.isKeyJustPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.SHIFT_RIGHT);
+            if(Gdx.input.isKeyJustPressed(Input.Keys.NUM_1))rooms.chooseUpgrade(0);
+            if(Gdx.input.isKeyJustPressed(Input.Keys.NUM_2))rooms.chooseUpgrade(1);
+            if(Gdx.input.isKeyJustPressed(Input.Keys.NUM_3))rooms.chooseUpgrade(2);
             if(inputTimer>=0.05f){
                 inputTimer%=0.05f;
                 double x=(Gdx.input.isKeyPressed(Input.Keys.D)?1:0)-(Gdx.input.isKeyPressed(Input.Keys.A)?1:0);

@@ -80,17 +80,65 @@ class RoomControllerTest {
         assertThat(controller.state().visible()).isFalse();
         assertThat(api.channel.closed).isTrue();
     }
+    @Test void upgradeDoesNotStopMovementAndDuplicateChoicesWaitForResponse(){
+        controller.open();api.connected.complete(api.channel);
+        api.events.accept(RoomEvent.room(new RoomStateResponse(5,snapshot(5,"PLAYING"))));
+        UUID world=UUID.randomUUID();
+        api.events.accept(RoomEvent.world(progression(world,5,10,"RUNNING","RUNNING",1,7)));
+        controller.chooseUpgrade(0);controller.chooseUpgrade(1);
+        assertThat(api.requests).isEqualTo(1);
+        assertThat(api.body).isEqualTo(new UpgradeRequest(world,7,"POWER"));
+        assertThat(controller.state().busy()).isFalse();
+        assertThat(controller.input(1,0,false,1,0,true,false)).isTrue();
+        api.events.accept(RoomEvent.world(progression(world,6,10,"RUNNING","RUNNING",0,8)));
+        api.reply.complete(new RoomStateResponse(6,snapshot(6,"PLAYING")));
+        assertThat(controller.state().world().players().getFirst().pendingUpgrades()).isZero();
+        controller.chooseUpgrade(0);
+        assertThat(api.requests).isEqualTo(1);
+    }
+    @Test void sameTickNewerRevisionUpdatesUpgradesAndSavedResultButTerminalCannotRevert(){
+        controller.open();api.connected.complete(api.channel);
+        api.events.accept(RoomEvent.room(new RoomStateResponse(5,snapshot(5,"PLAYING"))));
+        UUID world=UUID.randomUUID();
+        api.events.accept(RoomEvent.world(progression(world,5,10,"RUNNING","RUNNING",1,7)));
+        api.events.accept(RoomEvent.world(progression(world,6,10,"RUNNING","RUNNING",0,8)));
+        assertThat(controller.state().world().roomVersion()).isEqualTo(6);
+        api.events.accept(RoomEvent.world(progression(world,7,10,"WON","PENDING",0,8)));
+        api.events.accept(RoomEvent.world(progression(world,8,10,"WON","SAVED",0,8)));
+        assertThat(controller.state().world().saveState()).isEqualTo("SAVED");
+        api.events.accept(RoomEvent.world(progression(world,9,11,"RUNNING","RUNNING",0,8)));
+        assertThat(controller.state().world().phase()).isEqualTo("WON");
+    }
+    @Test void lateUpgradeFailureCannotOverwriteNewChoiceAndResetCancelsRequest(){
+        controller.open();api.connected.complete(api.channel);
+        api.events.accept(RoomEvent.room(new RoomStateResponse(5,snapshot(5,"PLAYING"))));
+        UUID world=UUID.randomUUID();
+        api.events.accept(RoomEvent.world(progression(world,5,10,"RUNNING","RUNNING",1,1)));
+        controller.chooseUpgrade(0);
+        api.events.accept(RoomEvent.world(progression(world,6,10,"RUNNING","RUNNING",1,2)));
+        api.reply.completeExceptionally(new ApiFailure(409,"Old choice"));
+        assertThat(controller.state().error()).isFalse();
+        assertThat(controller.state().world().players().getFirst().choiceId()).isEqualTo(2);
+        api.reply=new CompletableFuture<>();controller.chooseUpgrade(0);
+        controller.reset();
+        assertThat(api.reply).isCancelled();
+        assertThat(controller.upgradePending()).isFalse();
+        assertThat(controller.state().visible()).isFalse();
+    }
+    private WorldSnapshot progression(UUID world,long revision,long tick,String phase,String save,int pending,long choice){
+        return new WorldSnapshot("ABC234",revision,world,tick,List.of(new PlayerSnapshot(id,80,192,0,false,100,0,100,pending,pending>0?choice:0,pending>0?List.of("POWER","HASTE","VITALITY"):List.of(),Map.of())),List.of(),List.of(),phase,4790,0,2,0,40,save);
+    }
     private final class FakeApi implements GameApi {
         CompletableFuture<RoomChannel> connected=new CompletableFuture<>();
         CompletableFuture<RoomStateResponse> reply=new CompletableFuture<>();
-        Consumer<RoomEvent> events;Consumer<ApiFailure> failure;int requests;
+        Consumer<RoomEvent> events;Consumer<ApiFailure> failure;int requests;Object body;
         final Channel channel=new Channel();
         public CompletableFuture<RegisterResponse> register(RegisterRequest r){throw new UnsupportedOperationException();}
         public CompletableFuture<LoginResponse> login(LoginRequest r){return CompletableFuture.completedFuture(new LoginResponse("secret","Bearer",Instant.parse("2099-01-01T00:00:00Z")));}
         public CompletableFuture<PlayerProfileResponse> profile(String token){return CompletableFuture.completedFuture(new PlayerProfileResponse(id,"mage","Маг",0,"default"));}
         public CompletableFuture<Void> logout(String token){return CompletableFuture.completedFuture(null);}
         public CompletableFuture<RoomChannel> connectRooms(String token,Consumer<RoomEvent> events,Consumer<ApiFailure> failure){this.events=events;this.failure=failure;return connected;}
-        public CompletableFuture<RoomStateResponse> room(String token,String action,Object body){requests++;return reply;}
+        public CompletableFuture<RoomStateResponse> room(String token,String action,Object body){requests++;this.body=body;return reply;}
         public void close(){ }
     }
     private static final class Channel implements RoomChannel {

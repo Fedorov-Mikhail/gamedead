@@ -40,7 +40,7 @@ class RoomSpringTransportTest {
                 post(http,base,"first","ready","{\"ready\":true}",200);post(http,base,"second","ready","{\"ready\":true}",200);
                 var playing=post(http,base,"first","start","",200);
                 assertThat(playing.room().status()).isEqualTo("PLAYING");
-                one.sendText(json.writeValueAsString(new com.gamedead.protocol.world.InputCommand(2,1,1,0,false,1,0,true,false)),true).join();
+                one.sendText(json.writeValueAsString(new com.gamedead.protocol.world.InputCommand(com.gamedead.protocol.world.InputCommand.VERSION,1,1,0,false,1,0,true,false)),true).join();
                 var moving=b.waitFor(e->e.world()!=null && e.world().players().getFirst().x()>80).world();
                 assertThat(moving.players()).hasSize(2);
                 assertThat(moving.projectiles()).isNotEmpty();
@@ -77,6 +77,7 @@ class RoomSpringTransportTest {
     @EnableAutoConfiguration(excludeName="org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration")
     @Import({CoreConfiguration.class,SecurityConfiguration.class,ApiErrorWriter.class,ApiExceptionHandler.class,RoomRegistry.class,RoomController.class,GameSocketConfiguration.class})
     static class TestApplication {
+        @Bean com.gamedead.server.match.MatchJournal matchJournal(java.time.Clock clock){return RoomTestJournal.create(clock);}
         @Bean SessionService sessionService(){
             var sessions=mock(SessionService.class);
             when(sessions.authenticate(anyString())).thenAnswer(call->switch((String)call.getArgument(0)){

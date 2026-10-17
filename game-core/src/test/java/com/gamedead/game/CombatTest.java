@@ -50,10 +50,10 @@ class CombatTest {
         assertThat(world.tickNumber()).isEqualTo(tick);
     }
 
-    @Test void survivorWinsAndFinishedWorldRejectsMovementAndSpawning() {
+    @Test void timerExpiresWithoutVictoryAndFinishedWorldRejectsMovementAndSpawning() {
         ArenaWorld world = new ArenaWorld(List.of(one), 1);
         for (int i = 0; i < 20; i++) world.tick();
-        assertThat(world.phase()).isEqualTo(ArenaWorld.Phase.WON);
+        assertThat(world.phase()).isEqualTo(ArenaWorld.Phase.LOST);
         double x = world.players().getFirst().x();
         world.input(one, 1, 1, 0, true, 1, 0, true, false);
         world.tick();
@@ -96,6 +96,9 @@ class CombatTest {
         ArenaWorld contact = new ArenaWorld(List.of(one));
         contact.spawnEnemy(80, 192);
         contact.tick();
+        assertThat(contact.enemies().getFirst().action()).isEqualTo("WINDUP");
+        assertThat(contact.players().getFirst().health()).isEqualTo(100);
+        for (int i = 0; i < 12; i++) contact.tick();
         int health = contact.players().getFirst().health();
         contact.tick();
         assertThat(health).isEqualTo(90);

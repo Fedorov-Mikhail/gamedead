@@ -1,7 +1,7 @@
 package com.gamedead.protocol.world;
 public record InputCommand(int protocolVersion, long sequence, double x, double y, boolean dash,
                            double aimX, double aimY, boolean attack, boolean revive) {
-    public static final int VERSION = 2;
+    public static final int VERSION = 4;
     public InputCommand(long sequence, double x, double y, boolean dash) {
         this(VERSION, sequence, x, y, dash, 0, 0, false, false);
     }

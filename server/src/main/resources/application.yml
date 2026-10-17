@@ -1,5 +1,5 @@
 gamedead:
-  match-duration-seconds: ${GAMEDEAD_MATCH_DURATION_SECONDS:240}
+  match-duration-seconds: ${GAMEDEAD_MATCH_DURATION_SECONDS:1800}
 server:
   address: ${GAMEDEAD_BIND_ADDRESS:127.0.0.1}
   port: ${GAMEDEAD_PORT:8080}
